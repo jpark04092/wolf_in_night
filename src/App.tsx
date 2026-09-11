@@ -41,6 +41,7 @@ import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { VersionBadge } from './components/VersionBadge';
 import { AdminModal } from './components/AdminModal';
+import { RoleRevealModal } from './components/RoleRevealModal';
 
 export default function App() {
   const [roomId, setRoomId] = useState<string | null>(() => {
@@ -91,6 +92,7 @@ export default function App() {
   const [centerCards, setCenterCards] = useState<RoleType[]>([]);
   const [myRole, setMyRole] = useState<RoleType | null>(null);
   const [myInitialRole, setMyInitialRole] = useState<RoleType | null>(null);
+  const [hasConfirmedInitialRole, setHasConfirmedInitialRole] = useState<boolean>(false);
   const [votedTarget, setVotedTarget] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
   const [initialRoomFromUrl, setInitialRoomFromUrl] = useState<string>('');
@@ -556,7 +558,8 @@ export default function App() {
             if (uId === myId) {
               setMyRole(uData.role);
               if (uData.initialRole) {
-                setMyInitialRole(uData.initialRole);
+                // Keep initialRole immutable during gameplay once assigned
+                setMyInitialRole((prev) => (state?.phase === 'WAITING' || !prev ? uData.initialRole : prev));
               }
             }
           }
@@ -738,20 +741,24 @@ export default function App() {
           if (target) {
             const myFile = `/rooms/${roomId}/${botWithRole.id}.json`;
             const targetFile = `/rooms/${roomId}/${target.id}.json`;
-            const tempFile = `/rooms/${roomId}/temp.json`;
-            await webdav.move(myFile, tempFile);
-            await webdav.move(targetFile, myFile);
-            await webdav.move(tempFile, targetFile);
+            const botData = await webdav.get<UserCardFile>(myFile);
+            const targetData = await webdav.get<UserCardFile>(targetFile);
+            if (botData && targetData) {
+              await webdav.put(myFile, { ...botData, role: targetData.role });
+              await webdav.put(targetFile, { ...targetData, role: botData.role });
+            }
           }
         } else if (currentStep === 'TROUBLEMAKER') {
           const others = curPlayers.filter((p) => p.id !== botWithRole.id);
           if (others.length >= 2) {
             const fileA = `/rooms/${roomId}/${others[0].id}.json`;
             const fileB = `/rooms/${roomId}/${others[1].id}.json`;
-            const tempFile = `/rooms/${roomId}/temp.json`;
-            await webdav.move(fileA, tempFile);
-            await webdav.move(fileB, fileA);
-            await webdav.move(tempFile, fileB);
+            const userAData = await webdav.get<UserCardFile>(fileA);
+            const userBData = await webdav.get<UserCardFile>(fileB);
+            if (userAData && userBData) {
+              await webdav.put(fileA, { ...userAData, role: userBData.role });
+              await webdav.put(fileB, { ...userBData, role: userAData.role });
+            }
           }
         }
       }
@@ -846,6 +853,7 @@ export default function App() {
       await webdav.put(`/rooms/${roomId}/state.json`, nextState);
       setRoomState(nextState);
       setVotedTarget(null);
+      setHasConfirmedInitialRole(false);
     } catch (err) {
       console.error('Failed to start game:', err);
     }
@@ -931,6 +939,7 @@ export default function App() {
       await webdav.put(`/rooms/${roomId}/state.json`, nextState);
       setRoomState(nextState);
       setVotedTarget(null);
+      setHasConfirmedInitialRole(false);
     } catch (err) {
       console.error('Failed to restart game:', err);
     }
@@ -1139,7 +1148,6 @@ export default function App() {
 
         {/* 2. NIGHT PHASE: Mandatory 4x4 Memory Minigame for Bluffing Concealment */}
         {roomState.phase === 'NIGHT' && (() => {
-          const currentNightRoleDef = roomState.currentStep ? ROLES[roomState.currentStep] : null;
           const humanHasThisRole = players.some((p) => !p.isBot && p.initialRole === roomState.currentStep);
           const botHasThisRole = players.some((p) => p.isBot && p.initialRole === roomState.currentStep);
           const currentStepDuration = humanHasThisRole
@@ -1154,16 +1162,14 @@ export default function App() {
 
           return (
             <div className="w-full flex-1 flex flex-col items-center relative">
-              {/* Night Step Live Status & Progress Bar */}
+              {/* Night Step Live Status & Progress Bar (Role name hidden to protect bluffing) */}
               <div className="w-full bg-slate-900/90 border border-indigo-500/40 rounded-2xl p-3 mb-2.5 shadow-lg backdrop-blur-md">
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      밤 행동 진행 중:
-                      <span className="text-indigo-400 font-extrabold underline decoration-indigo-500/50">
-                        {currentNightRoleDef?.name || '직업 확인'}
-                      </span>
+                    <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                    <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>정적 속에서 밤이 흐르고 있습니다...</span>
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
@@ -1200,7 +1206,7 @@ export default function App() {
                 <div className="text-[11px] text-slate-400 text-center">
                   {isMyNightTurn ? (
                     <span className="text-amber-300 font-bold animate-pulse">
-                      당신의 차례입니다! 아래 액션 창에서 능력을 사용하세요.
+                      당신의 차례입니다! 능력을 사용하세요.
                     </span>
                   ) : (
                     <span>
@@ -1234,8 +1240,16 @@ export default function App() {
               <div className="w-full flex-1 flex flex-col items-center justify-center relative">
                 <MemoryMinigame />
 
-                {/* If it's my turn, display the semi-transparent role action modal */}
-                {isMyNightTurn && roomState.currentStep && myInitialRole && (
+                {/* 1. Game Start Secret Role Reveal Modal */}
+                {roomState.phase === 'NIGHT' && myInitialRole && !hasConfirmedInitialRole && (
+                  <RoleRevealModal
+                    role={myInitialRole}
+                    onClose={() => setHasConfirmedInitialRole(true)}
+                  />
+                )}
+
+                {/* 2. If it's my turn, display the semi-transparent role action modal (only after role is confirmed) */}
+                {isMyNightTurn && roomState.currentStep && myInitialRole && hasConfirmedInitialRole && (
                   <NightActionModal
                     roomId={roomId}
                     myId={myId}

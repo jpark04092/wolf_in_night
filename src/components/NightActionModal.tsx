@@ -163,7 +163,7 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
     }
   };
 
-  // Robber Action: 3-step MOVE transaction via temp.json
+  // Robber Action: Safe role property swap (preserves user identity & initialRole)
   const handleRobberSwap = async () => {
     if (!selectedTarget) return;
     setIsLoading(true);
@@ -172,17 +172,26 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
       const roomPrefix = `/rooms/${roomId}`;
       const myFile = `${roomPrefix}/${myId}.json`;
       const targetFile = `${roomPrefix}/${selectedTarget}.json`;
-      const tempFile = `${roomPrefix}/temp.json`;
 
-      // 3-step atomic move transaction as specified in Section 5.1
-      await webdav.move(myFile, tempFile);
-      await webdav.move(targetFile, myFile);
-      await webdav.move(tempFile, targetFile);
+      const myUserData = await webdav.get<UserCardFile>(myFile);
+      const targetUserData = await webdav.get<UserCardFile>(targetFile);
 
-      // Re-read own file to see new role
-      const myUpdated = await webdav.get<UserCardFile>(myFile);
-      if (myUpdated) {
-        setStolenRole(myUpdated.role);
+      if (myUserData && targetUserData) {
+        const myOriginalRole = myUserData.role;
+        const targetOriginalRole = targetUserData.role;
+
+        // Swap ONLY the role property. Preserve initialRole, displayName, avatarId, lastSeen!
+        await webdav.put(myFile, {
+          ...myUserData,
+          role: targetOriginalRole,
+        });
+
+        await webdav.put(targetFile, {
+          ...targetUserData,
+          role: myOriginalRole,
+        });
+
+        setStolenRole(targetOriginalRole);
         setActionDone(true);
         setStatusMessage('카드를 맞바꿨습니다! 새로운 직업을 확인하세요.');
       }
@@ -193,7 +202,7 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
     }
   };
 
-  // Troublemaker Action: 3-step MOVE transaction swapping target A & target B
+  // Troublemaker Action: Safe role property swap between target A & target B
   const handleTroublemakerSwap = async () => {
     if (troubleTargets.length !== 2) return;
     setIsLoading(true);
@@ -203,15 +212,28 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
       const roomPrefix = `/rooms/${roomId}`;
       const fileA = `${roomPrefix}/${targetA}.json`;
       const fileB = `${roomPrefix}/${targetB}.json`;
-      const tempFile = `${roomPrefix}/temp.json`;
 
-      // 3-step move swap: A -> temp, B -> A, temp -> B
-      await webdav.move(fileA, tempFile);
-      await webdav.move(fileB, fileA);
-      await webdav.move(tempFile, fileB);
+      const userAData = await webdav.get<UserCardFile>(fileA);
+      const userBData = await webdav.get<UserCardFile>(fileB);
 
-      setActionDone(true);
-      setStatusMessage('두 플레이어의 카드를 몰래 맞바꿨습니다! (내용은 알 수 없음)');
+      if (userAData && userBData) {
+        const roleA = userAData.role;
+        const roleB = userBData.role;
+
+        // Swap ONLY the role property between A and B
+        await webdav.put(fileA, {
+          ...userAData,
+          role: roleB,
+        });
+
+        await webdav.put(fileB, {
+          ...userBData,
+          role: roleA,
+        });
+
+        setActionDone(true);
+        setStatusMessage('두 플레이어의 카드를 몰래 맞바꿨습니다! (내용은 알 수 없음)');
+      }
     } catch (e) {
       console.warn('[Troublemaker Swap Error]', e);
     } finally {
@@ -248,8 +270,8 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
               </div>
             </div>
             <div className="text-right">
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
-                WebDAV MOVE/GET
+              <span className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800 text-indigo-300 font-semibold border border-slate-700">
+                {currentRoleDef.team === 'WEREWOLF' ? '늑대인간 팀' : currentRoleDef.team === 'TANNER' ? '무두장이' : '시민 팀'}
               </span>
             </div>
           </div>
@@ -459,7 +481,7 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
                     className="w-full mt-3 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-40 font-bold text-sm text-white shadow-lg transition flex items-center justify-center gap-2"
                   >
                     <ArrowRightLeft className="w-4 h-4" />
-                    <span>3단계 MOVE 원자적 카드 스왑 실행</span>
+                    <span>선택한 플레이어의 카드 훔치기</span>
                   </button>
                 </div>
               ) : (

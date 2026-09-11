@@ -33,7 +33,8 @@
 │       ├── VersionBadge.tsx            # 상단 배포 버전/커밋/빌드시각 뱃지 및 상세 확인 모달
 │       ├── WaitingRoomView.tsx         # 참여자 목록, QR 코드 모달, 가상 봇 추가/제거, 게임 시작
 │       ├── MemoryMinigame.tsx          # 4x4 메모리 카드 맞추기 (블러핑 은폐)
-│       ├── NightActionModal.tsx        # 밤 직업별 오버레이 액션 (3단계 MOVE 스왑 포함)
+│       ├── RoleRevealModal.tsx         # 게임 시작 직후 본인 비밀 시작 직업 전면 확인 모달
+│       ├── NightActionModal.tsx        # 밤 직업별 오버레이 액션 (안전한 role 프로퍼티 스왑)
 │       ├── DiscussionView.tsx          # 5분 아침 토론 타이머 및 팁
 │       ├── VotingView.tsx              # 의심자 지목 투표 및 실시간 투표자 폴링
 │       ├── ResultView.tsx              # 처형자 발표, 시작/최종 직업 공개, 승패 판정, 폭죽 효과
