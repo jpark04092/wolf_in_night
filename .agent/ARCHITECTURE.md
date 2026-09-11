@@ -203,16 +203,23 @@ NAS에 이미 Apache가 설치되어 `/var/www`를 사용 중인 경우:
    sudo chown -R www-data:www-data /var/lock/apache2
    sudo chmod -R 775 /var/www/werewolf/webdav
    ```
-4. **GitHub Actions 자동 빌드 & NAS git pull 연동 (가장 추천)**:
-   > 본 저장소의 `.github/workflows/deploy.yml`은 Codespaces 또는 로컬에서 `git push` 시 GitHub 클라우드(Node 20 LTS)에서 자동으로 빌드를 수행하고, 결과물인 `dist/` 폴더를 저장소에 직접 커밋 및 푸시합니다.
+4. **GitHub Actions 자동 빌드 & NAS release 브랜치 연동 (불필요한 소스코드 제외, 오직 dist만)**:
+   > 본 저장소의 `.github/workflows/deploy.yml`은 Codespaces 또는 로컬에서 `git push` 시 GitHub Actions(Node 20 LTS)에서 자동으로 빌드를 수행하고, **오직 순수 `dist/` 산출물만 `release` 브랜치에 푸시**합니다. (소스코드, node_modules, package.json 등 불필요한 파일이 전혀 포함되지 않음)
    
-   * 따라서 **NAS에는 Node.js나 npm이 없어도**, 저장소를 클론하고 `git pull`만 실행하면 최신 빌드된 `dist/`가 그대로 당겨집니다:
+   * **NAS에서 오직 배포 파일(dist)만 클론하기**:
      ```bash
-     cd /var/www/werewolf
-     git pull origin main
+     mkdir -p /var/www/werewolf/dist
+     cd /var/www/werewolf/dist
+     # release 브랜치만 단독 클론 (용량 최소화)
+     git clone -b release --single-branch <저장소_URL> .
      sudo chown -R www-data:www-data /var/www/werewolf/dist
      ```
-   * **수동 빌드 시 (대안)**: 로컬 PC에서 `npm run build` 후 `dist/` 폴더만 NAS로 업로드하거나, NAS의 Node.js를 NVM(`nvm install 20`)으로 업그레이드하여 빌드.
+   * **이후 업데이트 시**:
+     ```bash
+     cd /var/www/werewolf/dist
+     git pull origin release
+     sudo chown -R www-data:www-data /var/www/werewolf/dist
+     ```
 5. **Apache VirtualHost 설정 (`/etc/apache2/sites-available/werewolf.conf`)**:
    ```apache
    DavLockDB /var/lock/apache2/DavLock

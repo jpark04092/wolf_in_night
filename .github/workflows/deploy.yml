@@ -1,25 +1,21 @@
-name: Build and Commit dist for NAS Deployment
+name: Build and Deploy to release branch
 
 on:
   push:
     branches: [ main, master ]
-    paths-ignore:
-      - 'dist/**'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-and-push-dist:
+  build-and-deploy:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js 20 LTS
         uses: actions/setup-node@v4
@@ -32,19 +28,15 @@ jobs:
       - name: Build Web PWA (Vite)
         run: npm run build
 
-      - name: Commit and Push dist to Repository
+      - name: Deploy dist to release branch
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # dist 폴더 변경사항 추가
-          git add dist/ -f
-          
-          # 변경 사항이 있을 때만 커밋 및 푸시
-          if git diff --staged --quiet; then
-            echo "No changes in dist directory."
-          else
-            git commit -m "chore: build and commit dist for NAS deployment [skip ci]"
-            git push origin ${{ github.ref_name }}
-            echo "Successfully pushed updated dist to repository."
-          fi
+
+          cd dist
+          git init
+          git checkout -b release
+          git add -A
+          git commit -m "deploy: automated build for NAS (${{ github.sha }}) [skip ci]"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" release
+          echo "Successfully published dist files to release branch."
