@@ -36,8 +36,9 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+          cp install.sh dist/install.sh
           cp update.sh dist/update.sh
-          chmod +x dist/update.sh
+          chmod +x dist/install.sh dist/update.sh
 
           cd dist
           git init

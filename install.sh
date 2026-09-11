@@ -37,18 +37,29 @@ if [ "$REAL_USER" = "root" ]; then
   REAL_USER=$(logname 2>/dev/null || echo "root")
 fi
 
-# 파라미터 기본값 설정
-TARGET_DIR="${1:-/var/www/werewolf}"
+# 스크립트 실행 위치 감지
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 파라미터 및 경로 감지
+# 만약 현재 실행 위치에 index.html이 있다면 이미 dist 디렉토리 내부에서 실행된 것임
+if [ -z "$1" ] && [ -f "${SCRIPT_DIR}/index.html" ]; then
+  DIST_DIR="${SCRIPT_DIR}"
+  TARGET_DIR="$(dirname "${SCRIPT_DIR}")"
+else
+  TARGET_DIR="${1:-/var/www/werewolf}"
+  DIST_DIR="${TARGET_DIR}/dist"
+fi
+
 APACHE_PORT="${2:-80}"
 SERVER_NAME="${3:-_}"
 
-DIST_DIR="${TARGET_DIR}/dist"
 WEBDAV_DIR="${TARGET_DIR}/webdav"
 ROOMS_DIR="${WEBDAV_DIR}/rooms"
 
 echo -e "${CYAN}[1/7] 환경 설정 및 디렉터리 확인${NC}"
-echo " - 설치 경로: ${TARGET_DIR}"
-echo " - 정적 웹 파일: ${DIST_DIR}"
+echo " - 실행 위치: ${SCRIPT_DIR}"
+echo " - 설치 루트: ${TARGET_DIR}"
+echo " - 정적 웹 파일(dist): ${DIST_DIR}"
 echo " - WebDAV 저장소: ${WEBDAV_DIR}"
 echo " - 아파치 포트: ${APACHE_PORT}"
 echo " - 서버 이름: ${SERVER_NAME}"
@@ -80,7 +91,6 @@ mkdir -p /var/lock/apache2
 chown -R www-data:www-data /var/lock/apache2
 
 # 원격 Git 저장소 URL 감지
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL=""
 if git -C "${SCRIPT_DIR}" remote get-url origin >/dev/null 2>&1; then
   REPO_URL=$(git -C "${SCRIPT_DIR}" remote get-url origin)
@@ -88,7 +98,14 @@ fi
 
 # 5. release 브랜치 코드 배포 (dist 디렉터리)
 echo -e "\n${CYAN}[5/7] release 브랜치 빌드 결과물 배포${NC}"
-if [ -d "${DIST_DIR}/.git" ]; then
+if [ "${DIST_DIR}" = "${SCRIPT_DIR}" ] && [ -f "${DIST_DIR}/index.html" ]; then
+  echo -e "${GREEN}✓ 현재 실행 경로(${DIST_DIR})가 이미 정적 웹 배포본입니다.${NC}"
+  if [ -d "${DIST_DIR}/.git" ]; then
+    sudo -u "${REAL_USER}" git config --global --add safe.directory "${DIST_DIR}" || true
+    git config --global --add safe.directory "${DIST_DIR}" || true
+    git -C "${DIST_DIR}" fetch origin release 2>/dev/null || true
+  fi
+elif [ -d "${DIST_DIR}/.git" ]; then
   echo -e "기존 Git 저장소 감지됨. release 브랜치 최신화..."
   sudo -u "${REAL_USER}" git config --global --add safe.directory "${DIST_DIR}" || true
   git config --global --add safe.directory "${DIST_DIR}" || true
@@ -182,14 +199,20 @@ rm -f "${CONF_FILE}.tmp"
 
 echo -e "${GREEN}✓ ${CONF_FILE} 생성 완료${NC}"
 
-# 7. update.sh 배치 및 권한 부여
-echo -e "\n${CYAN}[7/7] 업데이트 스크립트(update.sh) 배치 및 최종 권한 설정${NC}"
+# 7. install.sh 및 update.sh 배치 및 권한 부여
+echo -e "\n${CYAN}[7/7] 관리 스크립트(install.sh, update.sh) 동기화 및 최종 권한 설정${NC}"
 
-if [ -f "${SCRIPT_DIR}/update.sh" ]; then
-  cp "${SCRIPT_DIR}/update.sh" "${TARGET_DIR}/update.sh"
-  cp "${SCRIPT_DIR}/update.sh" "${DIST_DIR}/update.sh" 2>/dev/null || true
-  chmod +x "${TARGET_DIR}/update.sh" "${DIST_DIR}/update.sh" 2>/dev/null || true
-fi
+for script in "install.sh" "update.sh"; do
+  if [ -f "${SCRIPT_DIR}/${script}" ]; then
+    if [ "${SCRIPT_DIR}" != "${TARGET_DIR}" ]; then
+      cp -f "${SCRIPT_DIR}/${script}" "${TARGET_DIR}/${script}" 2>/dev/null || true
+    fi
+    if [ "${SCRIPT_DIR}" != "${DIST_DIR}" ]; then
+      cp -f "${SCRIPT_DIR}/${script}" "${DIST_DIR}/${script}" 2>/dev/null || true
+    fi
+    chmod +x "${TARGET_DIR}/${script}" "${DIST_DIR}/${script}" 2>/dev/null || true
+  fi
+done
 
 # 소유권 및 권한 설정:
 # dist: 사용자가 git update 할 수 있도록 $REAL_USER:www-data (775)

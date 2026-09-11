@@ -26,7 +26,7 @@ const now = new Date();
 const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 const buildTime = `${kstDate.getUTCFullYear()}-${String(kstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kstDate.getUTCDate()).padStart(2, '0')} ${String(kstDate.getUTCHours()).padStart(2, '0')}:${String(kstDate.getUTCMinutes()).padStart(2, '0')} KST`;
 
-// Custom plugin to write version.json into dist
+// Custom plugin to write version.json and copy management scripts into dist
 function versionOutputPlugin() {
   return {
     name: 'generate-version-json',
@@ -43,6 +43,20 @@ function versionOutputPlugin() {
           JSON.stringify(versionData, null, 2),
           'utf-8'
         );
+
+        // Copy install.sh and update.sh into dist
+        for (const script of ['install.sh', 'update.sh']) {
+          const srcPath = path.resolve(__dirname, script);
+          const destPath = path.join(distDir, script);
+          if (fs.existsSync(srcPath)) {
+            fs.copyFileSync(srcPath, destPath);
+            try {
+              fs.chmodSync(destPath, 0o755);
+            } catch {
+              // ignore on non-posix
+            }
+          }
+        }
       }
     },
   };

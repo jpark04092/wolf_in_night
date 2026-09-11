@@ -70,9 +70,23 @@ git checkout release 2>/dev/null || git checkout -b release origin/release 2>/de
 git reset --hard origin/release
 git clean -fd
 
-# 4. 웹서버 파일 권한 보장
-echo -e "\n${CYAN}[3/3] 파일 권한 재설정 중...${NC}"
+# 4. 웹서버 파일 권한 보장 및 부모 폴더 스크립트 동기화
+echo -e "\n${CYAN}[3/3] 파일 권한 재설정 및 관리 스크립트 동기화 중...${NC}"
 CURRENT_USER=$(id -un)
+
+# 실행 스크립트 실행 권한 부여
+chmod +x install.sh update.sh 2>/dev/null || true
+
+# 부모 디렉터리(/var/www/werewolf 등)에도 스크립트 복사 보장
+PARENT_DIR="$(dirname "${TARGET_DIST}")"
+if [ -d "${PARENT_DIR}" ] && [ "${PARENT_DIR}" != "/" ] && [ "${PARENT_DIR}" != "/var/www" ]; then
+  for s in "install.sh" "update.sh"; do
+    if [ -f "${s}" ]; then
+      cp -f "${s}" "${PARENT_DIR}/${s}" 2>/dev/null || true
+      chmod +x "${PARENT_DIR}/${s}" 2>/dev/null || true
+    fi
+  done
+fi
 
 # 사용자와 www-data 그룹이 안전하게 접근할 수 있도록 775 권한 부여
 if [ "$(id -u)" -eq 0 ]; then
