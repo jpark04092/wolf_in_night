@@ -1,6 +1,6 @@
 node_modules/
 build/
-dist/
+# dist/ is tracked in repository for NAS deployment
 coverage/
 .DS_Store
 *.log

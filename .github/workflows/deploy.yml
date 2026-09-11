@@ -1,0 +1,51 @@
+name: Build and Commit dist for NAS Deployment
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - 'dist/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-push-dist:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: Build Web PWA (Vite)
+        run: npm run build
+
+      - name: Commit and Push dist to Repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # dist 폴더 변경사항 추가
+          git add dist/ -f
+          
+          # 변경 사항이 있을 때만 커밋 및 푸시
+          if git diff --staged --quiet; then
+            echo "No changes in dist directory."
+          else
+            git commit -m "chore: build and commit dist for NAS deployment [skip ci]"
+            git push origin ${{ github.ref_name }}
+            echo "Successfully pushed updated dist to repository."
+          fi

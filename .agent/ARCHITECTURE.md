@@ -111,3 +111,146 @@
 3. **PWA 매니페스트 및 서비스 워커 (`manifest.webmanifest`, `sw.js`)**:
    * 홈 화면 바로가기 추가 지원 (`display: standalone`).
    * 오프라인 리소스 캐시 및 네트워크 단절 시 `OfflineIndicator` 즉시 노출.
+
+---
+
+## 5. WebDAV 서버 설치 및 배포 가이드 (Installation & Setup)
+
+### 방법 1. 본 프로젝트 내장 WebDAV 서버 사용 (가장 간단, 권장)
+본 프로젝트의 `server.ts`에 이미 RFC 4918 규격의 WebDAV 핸들러(`webdav_storage/`)와 CORS 설정이 완벽히 구현되어 있습니다. 별도의 Nginx나 외부 DB 설치 없이 즉시 구동됩니다.
+```bash
+# 1. 의존성 설치
+npm install
+
+# 2. 프로덕션 빌드 (Vite 클라이언트 번들링 + esbuild 서버 번들링)
+npm run build
+
+# 3. 서버 실행 (포트 3000)
+npm run start
+```
+* 저장 경로: `./webdav_storage/rooms/` 하위에 파일이 영구 보관됩니다.
+
+### 방법 2. 독립형 Nginx WebDAV 서버 연동
+자체 Linux 서버나 NAS에 독립형 Nginx를 두고 프록시 또는 저장소로 분리할 경우:
+```nginx
+# nginx.conf 예시
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # 1. 프론트엔드 정적 파일 서빙
+    location / {
+        root /var/www/werewolf/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 2. WebDAV 전용 엔드포인트 (/webdav/)
+    location /webdav/ {
+        alias /var/webdav_data/;
+        
+        # WebDAV 활성화 (nginx-extras 모듈 필요: PROPFIND, MKCOL 지원)
+        dav_methods PUT DELETE MKCOL COPY MOVE;
+        dav_ext_methods PROPFIND OPTIONS;
+        create_full_put_path on;
+        dav_access user:rw group:rw all:r;
+
+        # WebDAV CORS 허용 헤더
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, MKCOL, MOVE, PROPFIND, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Content-Type, Depth, Destination" always;
+        add_header DAV "1, 2" always;
+
+        if ($request_method = OPTIONS) {
+            return 204;
+        }
+    }
+}
+```
+
+### 방법 3. Docker를 이용한 독립형 WebDAV 컨테이너 실행
+```bash
+# Nginx WebDAV 이미지 실행
+docker run -d --name werewolf-webdav \
+  -p 8080:80 \
+  -v $(pwd)/webdav_storage:/var/webdav \
+  -e WEBDAV_DATADIR=/var/webdav \
+  bytemark/webdav
+```
+* 클라이언트 `src/lib/webdav.ts`의 `baseUrl`을 `http://서버IP:8080`으로 지정하여 연동 가능합니다.
+
+### 방법 4. Custom NAS의 Apache HTTP Server (`/var/www`) 연동
+NAS에 이미 Apache가 설치되어 `/var/www`를 사용 중인 경우:
+
+1. **클론 추천 경로**: `/var/www/werewolf`
+   ```bash
+   cd /var/www
+   sudo git clone <저장소_URL> werewolf
+   sudo chown -R $USER:$USER /var/www/werewolf
+   ```
+2. **필수 Apache 모듈 활성화**:
+   ```bash
+   sudo a2enmod dav dav_fs headers rewrite
+   ```
+3. **WebDAV 락 디렉터리 및 저장소 생성/권한 설정**:
+   ```bash
+   # WebDAV 저장 폴더 생성
+   mkdir -p /var/www/werewolf/webdav/rooms
+   sudo mkdir -p /var/lock/apache2
+
+   # 빌드 및 WebDAV 디렉터리 권한 부여
+   sudo chown -R www-data:www-data /var/www/werewolf/webdav
+   sudo chown -R www-data:www-data /var/lock/apache2
+   sudo chmod -R 775 /var/www/werewolf/webdav
+   ```
+4. **GitHub Actions 자동 빌드 & NAS git pull 연동 (가장 추천)**:
+   > 본 저장소의 `.github/workflows/deploy.yml`은 Codespaces 또는 로컬에서 `git push` 시 GitHub 클라우드(Node 20 LTS)에서 자동으로 빌드를 수행하고, 결과물인 `dist/` 폴더를 저장소에 직접 커밋 및 푸시합니다.
+   
+   * 따라서 **NAS에는 Node.js나 npm이 없어도**, 저장소를 클론하고 `git pull`만 실행하면 최신 빌드된 `dist/`가 그대로 당겨집니다:
+     ```bash
+     cd /var/www/werewolf
+     git pull origin main
+     sudo chown -R www-data:www-data /var/www/werewolf/dist
+     ```
+   * **수동 빌드 시 (대안)**: 로컬 PC에서 `npm run build` 후 `dist/` 폴더만 NAS로 업로드하거나, NAS의 Node.js를 NVM(`nvm install 20`)으로 업그레이드하여 빌드.
+5. **Apache VirtualHost 설정 (`/etc/apache2/sites-available/werewolf.conf`)**:
+   ```apache
+   DavLockDB /var/lock/apache2/DavLock
+
+   <VirtualHost *:80>
+       ServerName your-nas-ip-or-domain
+       DocumentRoot /var/www/werewolf/dist
+
+       # 1. WebDAV 저장소 엔드포인트
+       Alias /webdav /var/www/werewolf/webdav
+       <Directory /var/www/werewolf/webdav>
+           Dav On
+           Options Indexes FollowSymLinks
+           AllowOverride None
+           Require all granted
+
+           # WebDAV 브라우저 연동용 CORS 헤더
+           Header always set Access-Control-Allow-Origin "*"
+           Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, MKCOL, MOVE, PROPFIND, OPTIONS"
+           Header always set Access-Control-Allow-Headers "Content-Type, Depth, Destination, Authorization"
+           Header always set Access-Control-Expose-Headers "DAV, Location"
+           Header always set DAV "1, 2"
+       </Directory>
+
+       # 2. React SPA 라우팅 지원 (HTML5 History API)
+       <Directory /var/www/werewolf/dist>
+           Options FollowSymLinks
+           AllowOverride None
+           Require all granted
+
+           RewriteEngine On
+           RewriteCond %{REQUEST_URI} !^/webdav [NC]
+           RewriteCond %{REQUEST_FILENAME} !-f
+           RewriteCond %{REQUEST_FILENAME} !-d
+           RewriteRule ^ index.html [QSA,L]
+       </Directory>
+   </VirtualHost>
+   ```
+4. **빌드 결과물 복사**:
+   로컬에서 `npm run build` 실행 후 생성된 `dist/` 폴더 안의 모든 파일을 NAS의 `/var/www/werewolf/dist/`로 업로드.
+

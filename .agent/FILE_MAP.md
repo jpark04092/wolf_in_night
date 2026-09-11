@@ -9,6 +9,9 @@
 │   ├── ARCHITECTURE.md                 # WebDAV 아키텍처 및 PWA 명세
 │   ├── GAME_LOGIC.md                   # 게임 로직 및 승패 판정
 │   └── FILE_MAP.md                     # 소스코드 맵 및 핵심 타입 정의
+├── .github/
+│   └── workflows/
+│       └── deploy.yml                  # GitHub Push 및 Codespaces 자동 빌드/배포 워크플로우
 ├── src/
 │   ├── main.tsx                        # React DOM 엔트리포인트 (PWA 서비스 워커 등록)
 │   ├── App.tsx                         # 최상위 상태 관리자, WebDAV 폴링(800ms) 및 페이즈 라우팅
