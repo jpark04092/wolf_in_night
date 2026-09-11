@@ -25,16 +25,29 @@ const VFS_STORAGE_KEY = 'onw_virtual_fs_v2';
 const virtualFS = new Map<string, { content: string; isDir: boolean }>();
 
 // Initialize VFS from localStorage if available
-try {
-  const savedVFS = localStorage.getItem(VFS_STORAGE_KEY);
-  if (savedVFS) {
-    const parsed = JSON.parse(savedVFS);
-    for (const [k, v] of Object.entries(parsed)) {
-      virtualFS.set(k, v as { content: string; isDir: boolean });
+export function syncVFSFromLocalStorage() {
+  try {
+    const savedVFS = localStorage.getItem(VFS_STORAGE_KEY);
+    if (savedVFS) {
+      const parsed = JSON.parse(savedVFS);
+      virtualFS.clear();
+      for (const [k, v] of Object.entries(parsed)) {
+        virtualFS.set(k, v as { content: string; isDir: boolean });
+      }
     }
+  } catch {
+    // ignore storage error
   }
-} catch {
-  // ignore storage error
+}
+syncVFSFromLocalStorage();
+
+// Cross-tab synchronization via standard Storage Event and BroadcastChannel
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === VFS_STORAGE_KEY) {
+      syncVFSFromLocalStorage();
+    }
+  });
 }
 
 // BroadcastChannel to synchronize virtualFS across all browser tabs in real-time
@@ -122,6 +135,18 @@ export class WebDAVClient {
         cache: 'no-store',
         credentials: 'same-origin',
       });
+
+      // If the server returns 404, 405, 501 or HTML SPA fallback on WebDAV paths,
+      // it indicates WebDAV is not supported by the current server. Fall back to virtual FS.
+      const contentType = res.headers.get('content-type') || '';
+      const isHtmlSpaResponse = contentType.includes('text/html') && (method !== 'GET' || !path.endsWith('.html'));
+      const isUnsupportedWebDav = !res.ok && (res.status === 404 || res.status === 405 || res.status === 501);
+
+      if (isHtmlSpaResponse || isUnsupportedWebDav) {
+        console.warn(`[WebDAV] Server returned status ${res.status} (${contentType}) on ${method} ${url}. Falling back to virtual WebDAV.`);
+        return this.handleVirtualFallback(method, path, body, reqHeaders);
+      }
+
       return res;
     } catch (err) {
       console.warn(`[WebDAV] Network/fetch issue on ${method} ${url}, using synchronized fallback:`, err);
@@ -212,7 +237,8 @@ export class WebDAVClient {
         })
       );
 
-      if (detailedRooms.length > 0) {
+      // If PROPFIND succeeded, return detailedRooms (even if 0 rooms, as the server responded authoritatively)
+      if (resources.length > 0) {
         return detailedRooms;
       }
     } catch (e) {
@@ -220,6 +246,7 @@ export class WebDAVClient {
     }
 
     // 3. Inspect VirtualFS entries if in offline/isolated fallback mode
+    syncVFSFromLocalStorage();
     const vfsRooms: WebDAVResource[] = [];
     const roomsPrefix = '/webdav/rooms/';
     for (const [key, val] of virtualFS.entries()) {
@@ -269,6 +296,7 @@ export class WebDAVClient {
     body?: string | null,
     headers: Record<string, string> = {}
   ): Response {
+    syncVFSFromLocalStorage();
     const norm = normalizePath(rawPath);
 
     if (method === 'MKCOL') {

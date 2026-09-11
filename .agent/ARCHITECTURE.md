@@ -16,9 +16,10 @@
                                     │ HTTP (MKCOL, PROPFIND, PUT, GET, MOVE, DELETE)
                                     ▼
 +-------------------------------------------------------------------------+
-|                  Express + WebDAV 미들웨어 (포트 3000)                   |
-|   - 엔드포인트: /webdav/*                                                |
-|   - 정적 파일 제공: dist/ (Vite 빌드 아티팩트)                           |
+|        Vite Dev Server (포트 5173) / Express 서버 (포트 3000)            |
+|   - 공용 미들웨어: src/server/webdavMiddleware.ts (Connect/Express)      |
+|   - 엔드포인트: /webdav/* (WebDAV RFC 4918), /api/rooms (고속 방 조회)   |
+|   - 정적 파일 제공: Vite HMR / dist/ (빌드 아티팩트)                      |
 +-------------------------------------------------------------------------+
                                     │
                                     │ Local Disk I/O

@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
 import {defineConfig} from 'vite';
+import { viteWebdavPlugin } from './src/server/webdavMiddleware';
 
 // Read version from package.json
 const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
@@ -70,7 +71,7 @@ export default defineConfig(() => {
       __BUILD_TIME__: JSON.stringify(buildTime),
       __COMMIT_HASH__: JSON.stringify(commitHash),
     },
-    plugins: [react(), tailwindcss(), versionOutputPlugin()],
+    plugins: [react(), tailwindcss(), versionOutputPlugin(), viteWebdavPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

@@ -9,6 +9,8 @@
 │   ├── ARCHITECTURE.md                 # WebDAV 아키텍처 및 PWA 명세
 │   ├── GAME_LOGIC.md                   # 게임 로직 및 승패 판정
 │   └── FILE_MAP.md                     # 소스코드 맵 및 핵심 타입 정의
+├── .vscode/
+│   └── settings.json                   # VS Code 및 패키지 매니저(npm) 설정
 ├── .github/
 │   └── workflows/
 │       └── deploy.yml                  # GitHub Push 및 Codespaces 자동 빌드/배포 워크플로우
@@ -18,6 +20,8 @@
 │   ├── types.ts                        # 공통 타입 및 인터페이스 (RoleType, RoomState 등)
 │   ├── version.ts                      # 빌드타임 버전, 빌드일시, Git Commit Hash 정의
 │   ├── index.css                       # Tailwind CSS (@import "tailwindcss";)
+│   ├── server/
+│   │   └── webdavMiddleware.ts         # Vite dev/preview 및 Express 공용 WebDAV & /api/rooms Connect 미들웨어
 │   ├── lib/
 │   │   ├── webdav.ts                   # WebDAV 클라이언트 (PROPFIND, GET, PUT, MKCOL, MOVE, DELETE)
 │   │   ├── roles.ts                    # 9개 직업 정의, 덱 생성 함수, 밤 스텝 순서
