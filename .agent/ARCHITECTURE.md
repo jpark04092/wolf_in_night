@@ -88,6 +88,7 @@
 ### (5) 투표 내역: `votes/{userId}.txt`
 * **경로**: `/rooms/{roomId}/votes/{userId}.txt`
 * **파일 내용**: 투표 지목 대상의 `userId` 문자열 (Plain Text).
+* **상태 관리**: 투표 제출 전에는 후보 카드를 자유롭게 터치하여 변경 가능하며, `[투표 제출하기]` 클릭 시 WebDAV 파일이 생성되고 선택이 확정(잠금)됩니다.
 * **집계 방식**: 방장이 `PROPFIND /rooms/{roomId}/votes/`로 목록을 읽어 각 파일의 텍스트 내용을 합산 집계.
 
 ### (6) 관리자 보안 설정 파일: `admin.json`

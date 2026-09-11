@@ -33,6 +33,13 @@ export const VotingView: React.FC<VotingViewProps> = ({
   const [votedUserIds, setVotedUserIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Sync votedTarget from props if restored asynchronously
+  useEffect(() => {
+    if (votedTarget) {
+      setSelectedTarget(votedTarget);
+    }
+  }, [votedTarget]);
+
   // Poll votes folder to see who has already voted
   useEffect(() => {
     let isMounted = true;
@@ -59,30 +66,31 @@ export const VotingView: React.FC<VotingViewProps> = ({
     };
   }, [roomId]);
 
+  const hasVoted = Boolean(votedTarget || votedUserIds.includes(myId));
+  const currentTarget = selectedTarget || votedTarget;
+  const totalVotesCount = votedUserIds.length;
+  const allVoted = totalVotesCount >= players.length;
+
   const handleSelectCandidate = (candidateId: string) => {
-    if (selectedTarget) return; // already voted
+    if (hasVoted) return; // already submitted vote
     playSound('click');
     setSelectedTarget(candidateId);
   };
 
   const handleSubmitVote = async () => {
-    if (!selectedTarget || isSubmitting) return;
+    if (!currentTarget || isSubmitting || hasVoted) return;
     setIsSubmitting(true);
     playSound('vote');
     try {
       // PUT /webdav/rooms/room_101/votes/user_{myId}.txt with target ID content
-      await webdav.put(`/rooms/${roomId}/votes/${myId}.txt`, selectedTarget);
-      onVote(selectedTarget);
+      await webdav.put(`/rooms/${roomId}/votes/${myId}.txt`, currentTarget);
+      onVote(currentTarget);
     } catch (e) {
       console.warn('Failed to submit vote:', e);
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  const hasVoted = Boolean(votedTarget || selectedTarget && votedUserIds.includes(myId));
-  const totalVotesCount = votedUserIds.length;
-  const allVoted = totalVotesCount >= players.length;
 
   return (
     <div className="w-full max-w-md mx-auto flex flex-col items-center space-y-4">
@@ -124,14 +132,14 @@ export const VotingView: React.FC<VotingViewProps> = ({
       {/* Players Cards for Voting */}
       <div className="w-full grid grid-cols-2 gap-2.5">
         {players.map((p) => {
-          const isSelected = selectedTarget === p.id;
+          const isSelected = currentTarget === p.id;
           const isMe = p.id === myId;
           const isUserVoted = votedUserIds.includes(p.id);
 
           return (
             <button
               key={p.id}
-              disabled={hasVoted}
+              disabled={hasVoted || isSubmitting}
               onClick={() => handleSelectCandidate(p.id)}
               className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all duration-150 min-h-[95px] relative overflow-hidden ${
                 isSelected
@@ -171,12 +179,12 @@ export const VotingView: React.FC<VotingViewProps> = ({
       {/* Submit Button (if not yet submitted) */}
       {!hasVoted && (
         <button
-          disabled={!selectedTarget || isSubmitting}
+          disabled={!currentTarget || isSubmitting}
           onClick={handleSubmitVote}
           className="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 disabled:opacity-40 text-white font-black text-base shadow-xl shadow-rose-950/60 transition active:scale-98 flex items-center justify-center gap-2"
         >
           <Vote className="w-5 h-5" />
-          <span>투표 제출하기</span>
+          <span>{isSubmitting ? '투표 제출 중...' : '투표 제출하기'}</span>
         </button>
       )}
 
