@@ -16,7 +16,7 @@
 │       └── deploy.yml                  # GitHub Push 및 Codespaces 자동 빌드/배포 워크플로우
 ├── src/
 │   ├── main.tsx                        # React DOM 엔트리포인트 (PWA 서비스 워커 등록)
-│   ├── App.tsx                         # 최상위 상태 관리자, WebDAV 폴링(800ms) 및 페이즈 라우팅
+│   ├── App.tsx                         # 최상위 상태 관리자, WebDAV 폴링(800ms), 방장 자동 위임/승계 및 페이즈 라우팅
 │   ├── types.ts                        # 공통 타입 및 인터페이스 (RoleType, RoomState 등)
 │   ├── version.ts                      # 빌드타임 버전, 빌드일시, Git Commit Hash 정의
 │   ├── index.css                       # Tailwind CSS (@import "tailwindcss";)
@@ -87,6 +87,7 @@ export interface RoomState {
   hostId: string;
   killed: string[] | string | null;
   fastMode?: boolean;
+  testMode?: boolean; // 테스트 모드 (타이머 정지)
 }
 
 // 유저 카드 파일 ({userId}.json)

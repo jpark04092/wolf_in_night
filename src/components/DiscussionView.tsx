@@ -18,6 +18,7 @@ interface DiscussionViewProps {
   players: PlayerInfo[];
   timerStartedAt: number;
   durationSeconds?: number;
+  testMode?: boolean;
   onStartVoting: () => void;
 }
 
@@ -27,6 +28,7 @@ export const DiscussionView: React.FC<DiscussionViewProps> = ({
   players,
   timerStartedAt,
   durationSeconds = 300,
+  testMode = false,
   onStartVoting,
 }) => {
   const [timeLeft, setTimeLeft] = useState<number>(durationSeconds);
@@ -67,17 +69,24 @@ export const DiscussionView: React.FC<DiscussionViewProps> = ({
           </div>
         </div>
 
-        {/* 5-minute Countdown Timer */}
-        <div
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border font-mono font-black text-base shadow-md ${
-            isUrgent
-              ? 'bg-rose-950/80 border-rose-500 text-rose-300 animate-pulse'
-              : 'bg-slate-900/90 border-slate-700 text-amber-300'
-          }`}
-        >
-          <Clock className="w-4 h-4 text-amber-400" />
-          <span>{timeFormatted}</span>
-        </div>
+        {/* 5-minute Countdown Timer or Test Mode Unlimited Badge */}
+        {testMode ? (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border border-purple-500/50 bg-purple-950/80 text-purple-300 font-bold text-xs shadow-md">
+            <Clock className="w-3.5 h-3.5 text-purple-400" />
+            <span>무제한 (테스트 모드)</span>
+          </div>
+        ) : (
+          <div
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border font-mono font-black text-base shadow-md ${
+              isUrgent
+                ? 'bg-rose-950/80 border-rose-500 text-rose-300 animate-pulse'
+                : 'bg-slate-900/90 border-slate-700 text-amber-300'
+            }`}
+          >
+            <Clock className="w-4 h-4 text-amber-400" />
+            <span>{timeFormatted}</span>
+          </div>
+        )}
       </div>
 
       {/* My Initial Role Reminder */}

@@ -23,6 +23,7 @@ export interface RoomState {
   timerStartedAt?: number;
   discussionDuration?: number; // seconds, default 300
   fastMode?: boolean; // When true, unassigned night steps advance immediately (0.8s) for testing
+  testMode?: boolean; // When true, all step timers are frozen for manual inspection/testing
 }
 
 export interface UserCardFile {

@@ -14,6 +14,8 @@ import {
   Layers,
   HelpCircle,
   Zap,
+  FlaskConical,
+  Lock,
 } from 'lucide-react';
 import { PlayerInfo, RoleType } from '../types';
 import { ROLES, generateDefaultDeck } from '../lib/roles';
@@ -23,22 +25,30 @@ interface WaitingRoomViewProps {
   roomId: string;
   myId: string;
   isHost: boolean;
+  isAdmin?: boolean;
+  testMode?: boolean;
   players: PlayerInfo[];
-  onStartGame: (deck: RoleType[], fastMode?: boolean) => void;
+  onStartGame: (deck: RoleType[], fastMode?: boolean, testMode?: boolean) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
   onKickPlayer?: (playerId: string) => void;
+  onToggleTestMode?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   roomId,
   myId,
   isHost,
+  isAdmin = false,
+  testMode = false,
   players,
   onStartGame,
   onAddBot,
   onRemoveBot,
   onKickPlayer,
+  onToggleTestMode,
+  onOpenAdmin,
 }) => {
   const [fastMode, setFastMode] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -280,36 +290,88 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         </div>
       </div>
 
-      {/* Host Option: Fast Mode Toggle */}
-      {isHost && (
-        <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-xl ${fastMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}`}>
-              <Zap className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-200">빠른 진행 모드 (Fast Mode)</div>
-              <div className="text-[10px] text-slate-400">
-                {fastMode ? '플레이어 없는 직업을 0.8초만에 즉시 통과 (테스트용)' : '블러핑 은폐를 위해 3.5초 가상 턴 유지 (권장)'}
+      {/* Host Option: Fast Mode & Test Mode Toggles */}
+      {(isHost || isAdmin) && (
+        <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 space-y-2.5">
+          {/* Fast Mode Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-xl ${fastMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-200">빠른 진행 모드 (Fast Mode)</div>
+                <div className="text-[10px] text-slate-400">
+                  {fastMode ? '플레이어 없는 직업을 0.8초만에 통과' : '3.5초 가상 턴 유지 (권장)'}
+                </div>
               </div>
             </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              playSound('click');
-              setFastMode((v) => !v);
-            }}
-            className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-0.5 ${
-              fastMode ? 'bg-amber-500' : 'bg-slate-700'
-            }`}
-          >
-            <div
-              className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                fastMode ? 'translate-x-5' : 'translate-x-0'
+            <button
+              type="button"
+              onClick={() => {
+                playSound('click');
+                setFastMode((v) => !v);
+              }}
+              className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-0.5 ${
+                fastMode ? 'bg-amber-500' : 'bg-slate-700'
               }`}
-            />
-          </button>
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                  fastMode ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Admin Test Mode Toggle (Timer Freeze) */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-xl ${testMode ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-slate-800 text-slate-400'}`}>
+                <FlaskConical className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <span>검증용 테스트 모드 (타이머 중지)</span>
+                  {isAdmin ? (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
+                      ADMIN
+                    </span>
+                  ) : (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-amber-400 font-bold flex items-center gap-0.5">
+                      <Lock className="w-2.5 h-2.5" /> 인증 필요
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {testMode
+                    ? '밤/토론 자동 타이머를 멈추고 수동 전진 (혼자 탭 검증용)'
+                    : '혼자 여러 탭으로 검증 시 활성화하세요'}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                playSound('click');
+                if (!isAdmin && onOpenAdmin) {
+                  onOpenAdmin();
+                } else if (onToggleTestMode) {
+                  onToggleTestMode();
+                }
+              }}
+              className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-0.5 ${
+                testMode ? 'bg-purple-600' : 'bg-slate-700'
+              }`}
+              title={isAdmin ? '테스트 모드 토글' : '관리자 인증 필요 (클릭하여 로그인)'}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                  testMode ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       )}
 
@@ -321,7 +383,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
             disabled={!canStart}
             onClick={() => {
               playSound('howl');
-              onStartGame(previewDeck, fastMode);
+              onStartGame(previewDeck, fastMode, testMode);
             }}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-base shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"
           >

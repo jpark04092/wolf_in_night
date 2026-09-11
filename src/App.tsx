@@ -11,6 +11,10 @@ import {
   Sparkles,
   Zap,
   Clock,
+  Crown,
+  FlaskConical,
+  ShieldAlert,
+  Lock,
 } from 'lucide-react';
 import {
   GamePhase,
@@ -20,6 +24,7 @@ import {
   RoomState,
   UserCardFile,
   CenterCardsFile,
+  RoomInfo,
 } from './types';
 import { ROLES, NIGHT_STEPS, getNextNightStep } from './lib/roles';
 import { webdav, WebDAVResource } from './lib/webdav';
@@ -35,6 +40,7 @@ import { ResultView } from './components/ResultView';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { VersionBadge } from './components/VersionBadge';
+import { AdminModal } from './components/AdminModal';
 
 export default function App() {
   const [roomId, setRoomId] = useState<string | null>(() => {
@@ -89,6 +95,68 @@ export default function App() {
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
   const [initialRoomFromUrl, setInitialRoomFromUrl] = useState<string>('');
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
+  const [toastMessage, setToastMessage] = useState<{ id: number; text: string; type?: 'info' | 'success' | 'warn' } | null>(null);
+
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && sessionStorage.getItem('onw_is_admin') === 'true';
+  });
+  const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+  const [adminRooms, setAdminRooms] = useState<RoomInfo[]>([]);
+
+  // Fetch rooms list for AdminModal when opened
+  useEffect(() => {
+    if (!showAdminModal) return;
+    webdav.listRooms().then((list) => {
+      setAdminRooms(
+        list.map((r) => ({
+          id: r.name,
+          name: r.name.replace(/^room_/, '방 '),
+          playerCount: r.playerCount ?? 0,
+          phase: (r.phase as any) || 'WAITING',
+          hostId: r.hostId || '',
+        }))
+      );
+    }).catch(() => {});
+  }, [showAdminModal]);
+
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const showToast = useCallback((text: string, type: 'info' | 'success' | 'warn' = 'info') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage({ id: Date.now(), text, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  }, []);
+
+  // Admin Test Mode Toggle (Timer freeze for manual inspection)
+  const handleToggleTestMode = useCallback(async () => {
+    if (!roomId) return;
+    if (!isAdmin) {
+      setShowAdminModal(true);
+      return;
+    }
+    const nextVal = !roomStateRef.current.testMode;
+    try {
+      const curState = roomStateRef.current;
+      const updated: RoomState = {
+        ...curState,
+        testMode: nextVal,
+      };
+      await webdav.put(`/rooms/${roomId}/state.json`, updated);
+      setRoomState(updated);
+      showToast(
+        nextVal
+          ? '🧪 테스트 모드 활성화: 모든 자동 타이머가 정지되었습니다.'
+          : '⏱️ 일반 모드 복구: 타이머가 정상 재개되었습니다.',
+        'info'
+      );
+      playSound('click');
+    } catch (err) {
+      console.warn('Failed to toggle test mode:', err);
+    }
+  }, [roomId, isAdmin, showToast]);
 
   const { isLocked, isSupported: wakeLockSupported, requestLock } = useWakeLock();
 
@@ -99,6 +167,9 @@ export default function App() {
   playersRef.current = players;
   const botHandledStepRef = useRef<NightStep | null>(null);
   const advancingStepRef = useRef<string | null>(null);
+  const isPromotingHostRef = useRef<boolean>(false);
+  const missingStateCountRef = useRef<number>(0);
+  const prevHostIdRef = useRef<string>('');
 
   // High-frequency tick for smooth night progress bar rendering
   useEffect(() => {
@@ -338,9 +409,32 @@ export default function App() {
   const handleLeaveRoom = async () => {
     if (roomId) {
       try {
-        await webdav.delete(`/rooms/${roomId}/${myId}.json`);
+        if (isHost) {
+          // Check other human players in the room
+          const curPlayers = playersRef.current;
+          const otherHumans = curPlayers.filter((p) => !p.isBot && p.id !== myId);
+          if (otherHumans.length > 0) {
+            // Hand over host privilege to the next human player in list
+            const nextHost = otherHumans[0];
+            console.log(`[Host Handover] Host is leaving. Handing over host privilege to ${nextHost.displayName} (${nextHost.id})...`);
+            const curState = roomStateRef.current;
+            await webdav.put(`/rooms/${roomId}/state.json`, {
+              ...curState,
+              hostId: nextHost.id,
+            });
+            // Delete own user card file
+            await webdav.delete(`/rooms/${roomId}/${myId}.json`);
+          } else {
+            // No other human players left in room -> Delete room collection entirely
+            console.log(`[Room Cleanup] Last human player/host left. Deleting room /rooms/${roomId}...`);
+            await webdav.delete(`/rooms/${roomId}`);
+          }
+        } else {
+          // Regular guest leaving
+          await webdav.delete(`/rooms/${roomId}/${myId}.json`);
+        }
       } catch (e) {
-        // ignore
+        console.warn('Error during leave room:', e);
       }
     }
     sessionStorage.removeItem('onw_room_id');
@@ -402,11 +496,34 @@ export default function App() {
       try {
         // 1. Fetch state.json
         const state = await webdav.get<RoomState>(`/rooms/${roomId}/state.json`);
-        if (state && isMounted) {
-          setRoomState(state);
-          if (state.hostId === myId) {
-            setIsHost(true);
+        if (!state) {
+          missingStateCountRef.current += 1;
+          // If state.json is absent for 2 consecutive polls, room was closed or deleted
+          if (missingStateCountRef.current >= 2 && isMounted) {
+            console.warn(`[Sync] Room ${roomId} was closed or deleted. Returning to lobby.`);
+            sessionStorage.removeItem('onw_room_id');
+            if (typeof window !== 'undefined') {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+            setRoomId(null);
+            setRoomState({
+              phase: 'WAITING',
+              currentStep: null,
+              stepStartedAt: 0,
+              hostId: '',
+              killed: null,
+            });
+            setPlayers([]);
+            showToast('대기실이 종료되었거나 삭제되어 로비로 이동합니다.', 'warn');
+            return;
           }
+          return;
+        }
+
+        missingStateCountRef.current = 0;
+        if (isMounted) {
+          setRoomState(state);
+          setIsHost(state.hostId === myId);
         }
 
         // 2. Fetch all user_*.json files
@@ -421,8 +538,9 @@ export default function App() {
           const uId = uf.name.replace(/\.json$/, '');
           const uData = await webdav.get<UserCardFile>(`/rooms/${roomId}/${uf.name}`);
           if (uData) {
-            // Check online presence (within last 12 seconds)
-            const isOnline = uData.isBot || (uData.lastSeen ? now - uData.lastSeen < 12000 : true);
+            // Check online presence (12s normally, or 180s in testMode for multi-tab inspection)
+            const timeoutThreshold = (state?.testMode || roomStateRef.current.testMode) ? 180000 : 12000;
+            const isOnline = uData.isBot || (uData.lastSeen ? now - uData.lastSeen < timeoutThreshold : true);
 
             loadedPlayers.push({
               id: uId,
@@ -447,6 +565,64 @@ export default function App() {
         if (isMounted) {
           setPlayers(loadedPlayers);
         }
+
+        // 2-1. Host Migration & Self-Healing: Check if host is missing or offline
+        const currentHost = loadedPlayers.find((p) => p.id === state.hostId);
+        const isHostMissing = !currentHost;
+        const isHostOfflineInWaiting =
+          state.phase === 'WAITING' &&
+          Boolean(currentHost && !currentHost.isBot && currentHost.isOnline === false);
+
+        if (isHostMissing || isHostOfflineInWaiting) {
+          const activeHumans = loadedPlayers.filter(
+            (p) => !p.isBot && p.isOnline && p.id !== state.hostId
+          );
+
+          if (activeHumans.length > 0) {
+            // First online human player in list takes over host role
+            const candidate = activeHumans[0];
+            if (candidate.id === myId && !isPromotingHostRef.current) {
+              isPromotingHostRef.current = true;
+              console.warn(
+                `[Self-Healing Host Migration] Host (${state.hostId}) is ${
+                  isHostMissing ? 'missing' : 'offline in waiting room'
+                }. Promoting self (${myId}) to host!`
+              );
+              try {
+                const updatedState: RoomState = {
+                  ...state,
+                  hostId: myId,
+                };
+                await webdav.put(`/rooms/${roomId}/state.json`, updatedState);
+                if (isMounted) {
+                  setRoomState(updatedState);
+                  setIsHost(true);
+                  showToast('👑 방장이 부재중이거나 퇴장하여 새로운 방장이 되었습니다!', 'success');
+                  playSound('click');
+                }
+                // If previous host was an offline zombie in waiting room, clean up their file
+                if (isHostOfflineInWaiting && currentHost) {
+                  webdav.delete(`/rooms/${roomId}/${currentHost.id}.json`).catch(() => {});
+                }
+              } catch (err) {
+                console.error('Failed to promote to host:', err);
+              } finally {
+                setTimeout(() => {
+                  isPromotingHostRef.current = false;
+                }, 2000);
+              }
+            }
+          }
+        }
+
+        // 2-2. Host Change Notification (Toast for other guests)
+        if (prevHostIdRef.current && prevHostIdRef.current !== state.hostId) {
+          const newHostPlayer = loadedPlayers.find((p) => p.id === state.hostId);
+          if (newHostPlayer && newHostPlayer.id !== myId) {
+            showToast(`👑 새로운 방장: ${newHostPlayer.displayName} 님`, 'info');
+          }
+        }
+        prevHostIdRef.current = state.hostId;
 
         // 3. If in RESULT phase or Seer, fetch center.json
         if (state?.phase === 'RESULT' || state?.phase === 'NIGHT') {
@@ -580,7 +756,12 @@ export default function App() {
         }
       }
 
-      // 2. Normal Host Step Progression
+      // 2. Freeze auto-advancement in testMode for manual inspection across tabs
+      if (curState.testMode) {
+        return;
+      }
+
+      // 3. Normal Host Step Progression
       if (isHost && elapsed >= targetDuration) {
         console.log(`[Host] Night step ${currentStep} duration reached (${targetDuration}s). Advancing...`);
         advanceNightStep(currentStep);
@@ -618,7 +799,7 @@ export default function App() {
   }, [isHost, roomId, roomState.phase, players]);
 
   // Host: Start Game (Shuffle deck & assign roles)
-  const handleStartGame = async (shuffledDeck: RoleType[], fastMode = false) => {
+  const handleStartGame = async (shuffledDeck: RoleType[], fastMode = false, testMode = false) => {
     if (!roomId || !isHost) return;
 
     try {
@@ -651,7 +832,8 @@ export default function App() {
         }
       }
 
-      // 4. PUT state.json (phase: "NIGHT", currentStep: "WEREWOLF", stepStartedAt: Date.now(), fastMode)
+      // 4. PUT state.json (phase: "NIGHT", currentStep: "WEREWOLF", stepStartedAt: Date.now(), fastMode, testMode)
+      const isTestActive = testMode || roomStateRef.current.testMode || false;
       const nextState: RoomState = {
         phase: 'NIGHT',
         currentStep: 'WEREWOLF',
@@ -659,6 +841,7 @@ export default function App() {
         hostId: myId,
         killed: null,
         fastMode,
+        testMode: isTestActive,
       };
       await webdav.put(`/rooms/${roomId}/state.json`, nextState);
       setRoomState(nextState);
@@ -743,6 +926,7 @@ export default function App() {
         stepStartedAt: 0,
         hostId: myId,
         killed: null,
+        testMode: roomStateRef.current.testMode || false,
       };
       await webdav.put(`/rooms/${roomId}/state.json`, nextState);
       setRoomState(nextState);
@@ -798,6 +982,12 @@ export default function App() {
     return (
       <>
         <OfflineIndicator />
+        {toastMessage && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-900/95 border border-amber-500/60 text-white shadow-2xl flex items-center gap-2.5 text-xs font-bold backdrop-blur-md">
+            <Crown className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>{toastMessage.text}</span>
+          </div>
+        )}
         <LobbyView onJoinRoom={handleJoinRoom} initialRoomId={initialRoomFromUrl} />
       </>
     );
@@ -833,6 +1023,14 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-3 selection:bg-indigo-500">
       <OfflineIndicator />
 
+      {/* Floating Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-900/95 border border-amber-500/60 text-white shadow-2xl shadow-indigo-950/80 flex items-center gap-2.5 text-xs font-bold backdrop-blur-md">
+          <Crown className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <span>{toastMessage.text}</span>
+        </div>
+      )}
+
       {/* Persistent Top Status Bar */}
       <header className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl px-4 py-2.5 shadow-xl flex items-center justify-between mb-3 backdrop-blur-md">
         <div className="flex items-center gap-2">
@@ -853,6 +1051,42 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Test Mode Badge / Toggle Button */}
+          {roomState.testMode ? (
+            <button
+              onClick={handleToggleTestMode}
+              className="px-2.5 py-1 rounded-full bg-purple-950/90 border border-purple-500/60 text-purple-300 font-bold text-xs flex items-center gap-1 shadow-sm hover:bg-purple-900 transition"
+              title="테스트 모드 활성 중 (타이머 정지). 클릭 시 일반 모드로 전환"
+            >
+              <FlaskConical className="w-3 h-3 text-purple-400" />
+              <span>테스트 ON</span>
+            </button>
+          ) : (isAdmin || isHost) && (
+            <button
+              onClick={handleToggleTestMode}
+              className="p-1.5 rounded-xl text-slate-500 hover:text-purple-300 hover:bg-slate-800 transition text-xs flex items-center gap-0.5"
+              title="검증용 테스트 모드 활성화 (타이머 중지)"
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Admin Dashboard / Login Button */}
+          <button
+            onClick={() => {
+              playSound('click');
+              setShowAdminModal(true);
+            }}
+            className={`p-1.5 rounded-xl transition ${
+              isAdmin
+                ? 'text-amber-400 bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30'
+                : 'text-slate-500 hover:text-amber-300 hover:bg-slate-800'
+            }`}
+            title={isAdmin ? '관리자 대시보드 열기' : '관리자 로그인 (비밀번호: 0000)'}
+          >
+            {isAdmin ? <ShieldAlert className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+          </button>
+
           {/* Phase Badge */}
           <span
             className={`text-xs font-bold px-2.5 py-1 rounded-full border shadow-sm ${badge.color}`}
@@ -891,11 +1125,15 @@ export default function App() {
             roomId={roomId}
             myId={myId}
             isHost={isHost}
+            isAdmin={isAdmin}
+            testMode={roomState.testMode}
             players={players}
             onStartGame={handleStartGame}
             onAddBot={handleAddBot}
             onRemoveBot={handleRemoveBot}
             onKickPlayer={handleKickPlayer}
+            onToggleTestMode={handleToggleTestMode}
+            onOpenAdmin={() => setShowAdminModal(true)}
           />
         )}
 
@@ -929,20 +1167,33 @@ export default function App() {
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
-                    {roomState.fastMode && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 flex items-center gap-0.5">
-                        <Zap className="w-3 h-3" /> 빠른 모드
+                    {roomState.testMode ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40 flex items-center gap-1">
+                        <FlaskConical className="w-3 h-3 text-purple-400" />
+                        <span>타이머 정지 (테스트 모드)</span>
                       </span>
+                    ) : (
+                      <>
+                        {roomState.fastMode && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 flex items-center gap-0.5">
+                            <Zap className="w-3 h-3" /> 빠른 모드
+                          </span>
+                        )}
+                        <span>{remainingSec.toFixed(1)}s</span>
+                      </>
                     )}
-                    <span>{remainingSec.toFixed(1)}s</span>
                   </div>
                 </div>
 
                 {/* Progress bar */}
                 <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-2">
                   <div
-                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500 transition-all duration-100 ease-linear rounded-full"
-                    style={{ width: `${progressPercent}%` }}
+                    className={`h-full transition-all duration-100 ease-linear rounded-full ${
+                      roomState.testMode
+                        ? 'bg-purple-500 w-full'
+                        : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500'
+                    }`}
+                    style={roomState.testMode ? undefined : { width: `${progressPercent}%` }}
                   />
                 </div>
 
@@ -957,6 +1208,26 @@ export default function App() {
                     </span>
                   )}
                 </div>
+
+                {/* Test Mode Manual Step Advancement Control */}
+                {roomState.testMode && roomState.currentStep && (
+                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                    <span className="text-[10px] text-purple-300 flex items-center gap-1">
+                      <FlaskConical className="w-3 h-3 text-purple-400" />
+                      탭 이동 검증 후 버튼으로 수동 진행
+                    </span>
+                    <button
+                      onClick={() => {
+                        playSound('click');
+                        advanceNightStep(roomState.currentStep!);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5"
+                    >
+                      <span>다음 밤 단계 진행</span>
+                      <span>⏩</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Memory Minigame & Modal Container */}
@@ -988,6 +1259,7 @@ export default function App() {
             players={players}
             timerStartedAt={roomState.timerStartedAt || roomState.stepStartedAt}
             durationSeconds={300}
+            testMode={roomState.testMode}
             onStartVoting={handleStartVoting}
           />
         )}
@@ -1018,6 +1290,31 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* In-Game Admin Modal */}
+      <AdminModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+        isAdmin={isAdmin}
+        setIsAdmin={setIsAdmin}
+        rooms={adminRooms}
+        onRoomsUpdated={async () => {
+          try {
+            const list = await webdav.listRooms();
+            setAdminRooms(
+              list.map((r) => ({
+                id: r.name,
+                name: r.name.replace(/^room_/, '방 '),
+                playerCount: r.playerCount ?? 0,
+                phase: (r.phase as any) || 'WAITING',
+                hostId: r.hostId || '',
+              }))
+            );
+          } catch {
+            // ignore
+          }
+        }}
+      />
     </div>
   );
 }
