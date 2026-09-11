@@ -1009,7 +1009,7 @@ export default function App() {
         return { label: '대기실', color: 'bg-indigo-950 text-indigo-300 border-indigo-700' };
       case 'NIGHT':
         return {
-          label: `밤 (${ROLES[roomState.currentStep || 'WEREWOLF']?.name || '진행 중'})`,
+          label: '밤 (진행 중)',
           color: 'bg-rose-950 text-rose-300 border-rose-700',
         };
       case 'DAY_DISCUSSION':
@@ -1169,7 +1169,7 @@ export default function App() {
                     <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
                     <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                       <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>정적 속에서 밤이 흐르고 있습니다...</span>
+                      <span>고요한 정적 속에서 밤이 흐르고 있습니다...</span>
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">

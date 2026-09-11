@@ -135,9 +135,10 @@
 2. **초대용 QR 코드**:
    * `qrcode` 라이브러리로 `https://도메인/?room={roomId}` 형태의 URL을 동적 생성.
    * 별도 모바일 앱 설치(Zero-Install) 없이 스마트폰 기본 카메라로 즉시 입장.
-3. **PWA 매니페스트 및 서비스 워커 (`manifest.webmanifest`, `sw.js`)**:
+3. **PWA 매니페스트 및 서비스 워커 (`manifest.webmanifest`, `public/sw.js`)**:
    * 홈 화면 바로가기 추가 지원 (`display: standalone`).
    * 오프라인 리소스 캐시 및 네트워크 단절 시 `OfflineIndicator` 즉시 노출.
+   * **버전 관리 및 Network-First 문서 전략 (`one-night-werewolf-v2`)**: 신규 배포 시 구버전 번들 고착을 막기 위해 HTML/문서 요청에 Network-First 전략을 적용하고, 서비스 워커 활성화 시 구버전 캐시를 원자적으로 자동 제거.
 
 ---
 

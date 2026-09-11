@@ -1,4 +1,4 @@
-const CACHE_NAME = 'one-night-werewolf-v1';
+const CACHE_NAME = 'one-night-werewolf-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -30,20 +30,38 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Do not cache WebDAV and API calls (realtime state synchronization)
-  if (event.request.url.includes('/webdav/') || event.request.url.includes('/api/')) {
+  // Do not cache WebDAV, API calls, or version.json (realtime state & release checks)
+  if (
+    event.request.url.includes('/webdav/') ||
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('version.json')
+  ) {
     return;
   }
+
+  // Network-First for navigation / HTML requests to prevent stale cached bundles
+  if (event.request.mode === 'navigate' || event.request.destination === 'document') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Cache-first for other static assets
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
-      return fetch(event.request).catch(() => {
-        if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-      });
+      return fetch(event.request);
     })
   );
 });

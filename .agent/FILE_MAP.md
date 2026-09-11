@@ -43,7 +43,7 @@
 │       └── OfflineIndicator.tsx        # 오프라인 네트워크 단절 배너
 ├── public/
 │   ├── manifest.webmanifest            # PWA 웹 앱 매니페스트
-│   ├── sw.js                           # 오프라인 캐시 서비스 워커
+│   ├── sw.js                           # 오프라인 캐시 및 Network-First PWA 서비스 워커 (v2)
 │   └── icon-*.png                      # PWA 및 파비콘 아이콘
 ├── server.ts                           # Express + WebDAV 미들웨어 + Vite SSR/Dev 서버
 ├── vite.config.ts                      # Vite 번들러 설정
