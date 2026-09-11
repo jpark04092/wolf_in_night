@@ -86,6 +86,7 @@ export interface RoomState {
   timerStartedAt?: number;
   hostId: string;
   killed: string[] | string | null;
+  round?: number; // 게임 회차 카운터 (모달 중복 방지)
   fastMode?: boolean;
   testMode?: boolean; // 테스트 모드 (타이머 정지)
 }

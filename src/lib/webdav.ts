@@ -136,13 +136,13 @@ export class WebDAVClient {
         credentials: 'same-origin',
       });
 
-      // If the server returns 404, 405, 501 or HTML SPA fallback on WebDAV paths,
+      // If the server returns HTML SPA fallback or 501 on WebDAV paths,
       // it indicates WebDAV is not supported by the current server. Fall back to virtual FS.
       const contentType = res.headers.get('content-type') || '';
       const isHtmlSpaResponse = contentType.includes('text/html') && (method !== 'GET' || !path.endsWith('.html'));
-      const isUnsupportedWebDav = !res.ok && (res.status === 404 || res.status === 405 || res.status === 501);
+      const isUnsupportedWebDav = !res.ok && (isHtmlSpaResponse || res.status === 501 || (res.status === 405 && method !== 'MKCOL'));
 
-      if (isHtmlSpaResponse || isUnsupportedWebDav) {
+      if (isUnsupportedWebDav) {
         console.warn(`[WebDAV] Server returned status ${res.status} (${contentType}) on ${method} ${url}. Falling back to virtual WebDAV.`);
         return this.handleVirtualFallback(method, path, body, reqHeaders);
       }
@@ -429,7 +429,7 @@ export class WebDAVClient {
    */
   async delete(path: string): Promise<boolean> {
     const res = await this.request('DELETE', path);
-    return res.status === 204 || res.status === 200;
+    return res.status === 204 || res.status === 200 || res.status === 404;
   }
 
   /**

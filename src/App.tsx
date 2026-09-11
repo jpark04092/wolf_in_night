@@ -172,7 +172,7 @@ export default function App() {
   const isPromotingHostRef = useRef<boolean>(false);
   const missingStateCountRef = useRef<number>(0);
   const prevHostIdRef = useRef<string>('');
-  const lastHandledNightSessionRef = useRef<number>(0);
+  const lastHandledRoundRef = useRef<number>(0);
   const [isStartingGame, setIsStartingGame] = useState(false);
 
   // In-memory unique ID for this React tab instance (not shared or cloned)
@@ -559,7 +559,7 @@ export default function App() {
       // Ensure directory /rooms, /rooms/{roomId} and /rooms/{roomId}/votes
       await webdav.mkcol('/rooms');
       await webdav.mkcol(`/rooms/${targetRoomId}`);
-      await webdav.mkcol(`/rooms/${targetRoomId}/votes`);
+      await webdav.mkcol(`/rooms/${targetRoomId}/votes/`);
 
       // Check if user already has a card (preserve role and initialRole!)
       const existingUser = await webdav.get<UserCardFile>(`/rooms/${targetRoomId}/${myId}.json`);
@@ -594,6 +594,7 @@ export default function App() {
           stepStartedAt: Date.now(),
           hostId: myId,
           killed: null,
+          round: 0,
         };
         await webdav.put(`/rooms/${targetRoomId}/state.json`, initialState);
         setRoomState(initialState);
@@ -726,10 +727,11 @@ export default function App() {
 
         missingStateCountRef.current = 0;
 
-        // Detect new night session (new stepStartedAt cycle in NIGHT phase)
-        const isNewNightSession = state.phase === 'NIGHT' && lastHandledNightSessionRef.current !== state.stepStartedAt;
-        if (isNewNightSession) {
-          lastHandledNightSessionRef.current = state.stepStartedAt;
+        // Detect new game round (tracked via state.round)
+        const currentRound = state.round || 1;
+        const isNewRound = state.phase === 'NIGHT' && lastHandledRoundRef.current !== currentRound;
+        if (isNewRound) {
+          lastHandledRoundRef.current = currentRound;
         }
 
         if (isMounted) {
@@ -746,8 +748,8 @@ export default function App() {
             setMyRole(null);
             botHandledStepRef.current = null;
             advancingStepRef.current = null;
-            lastHandledNightSessionRef.current = 0;
-          } else if (isNewNightSession) {
+            lastHandledRoundRef.current = 0;
+          } else if (isNewRound) {
             // New game started: reset confirmation and votes so all players see RoleRevealModal
             setHasConfirmedInitialRole(false);
             setVotedTarget(null);
@@ -790,8 +792,8 @@ export default function App() {
               if (state.phase === 'WAITING') {
                 setMyInitialRole(null);
               } else if (state.phase === 'NIGHT') {
-                // Adopt the newly assigned initialRole on a new night session or if missing
-                setMyInitialRole((prev) => (isNewNightSession || !prev ? (uData.initialRole || null) : prev));
+                // Adopt the newly assigned initialRole on a new round or if missing
+                setMyInitialRole((prev) => (isNewRound || !prev ? (uData.initialRole || null) : prev));
               } else {
                 setMyInitialRole((prev) => prev || uData.initialRole || null);
               }
@@ -1050,6 +1052,19 @@ export default function App() {
     });
   }, [isHost, roomId, roomState.phase, players]);
 
+  // Helper to cleanly clear individual vote files while keeping directory intact
+  const clearVotesDirectory = async (targetRoomId: string) => {
+    try {
+      const resources = await webdav.propfind(`/rooms/${targetRoomId}/votes/`, '1');
+      const voteFiles = resources.filter((r) => !r.isDir && r.name.endsWith('.txt'));
+      await Promise.all(
+        voteFiles.map((vf) => webdav.delete(`/rooms/${targetRoomId}/votes/${vf.name}`).catch(() => {}))
+      );
+    } catch {
+      await webdav.mkcol(`/rooms/${targetRoomId}/votes/`).catch(() => {});
+    }
+  };
+
   // Host: Start Game (Shuffle deck & assign roles)
   const handleStartGame = async (shuffledDeck: RoleType[], fastMode = false, testMode = false) => {
     if (!roomId || !isHost || isStartingGame) return;
@@ -1084,13 +1099,13 @@ export default function App() {
       setCenterCards(assignedCenter);
 
       // 3. Clear votes directory cleanly
-      await webdav.delete(`/rooms/${roomId}/votes`).catch(() => {});
-      await webdav.mkcol(`/rooms/${roomId}/votes`).catch(() => {});
+      await clearVotesDirectory(roomId);
 
-      // 4. PUT state.json (phase: "NIGHT", currentStep: "WEREWOLF", stepStartedAt: Date.now(), fastMode, testMode)
+      // 4. PUT state.json (phase: "NIGHT", currentStep: "WEREWOLF", stepStartedAt: Date.now(), fastMode, testMode, round)
       const isTestActive = testMode || roomStateRef.current.testMode || false;
       const nightStartedAt = Date.now();
-      lastHandledNightSessionRef.current = nightStartedAt;
+      const nextRound = (roomStateRef.current.round || 0) + 1;
+      lastHandledRoundRef.current = nextRound;
 
       const nextState: RoomState = {
         phase: 'NIGHT',
@@ -1098,6 +1113,7 @@ export default function App() {
         stepStartedAt: nightStartedAt,
         hostId: myId,
         killed: null,
+        round: nextRound,
         fastMode,
         testMode: isTestActive,
       };
@@ -1137,7 +1153,7 @@ export default function App() {
 
     try {
       // 1. PROPFIND /webdav/rooms/room_xxx/votes/
-      const resources = await webdav.propfind(`/rooms/${roomId}/votes`, '1');
+      const resources = await webdav.propfind(`/rooms/${roomId}/votes/`, '1');
       const voteFiles = resources.filter((r) => !r.isDir && r.name.endsWith('.txt'));
 
       const tallies: Record<string, number> = {};
@@ -1190,13 +1206,13 @@ export default function App() {
         stepStartedAt: 0,
         hostId: myId,
         killed: null,
+        round: roomStateRef.current.round || 0,
         testMode: roomStateRef.current.testMode || false,
       };
       await webdav.put(`/rooms/${roomId}/state.json`, nextState);
 
       // 2. Cleanly clear votes directory
-      await webdav.delete(`/rooms/${roomId}/votes`).catch(() => {});
-      await webdav.mkcol(`/rooms/${roomId}/votes`).catch(() => {});
+      await clearVotesDirectory(roomId);
 
       // 3. Reset player cards in WebDAV (clearing initialRole to avoid stale role in waiting room)
       const curPlayers = playersRef.current;
@@ -1221,7 +1237,7 @@ export default function App() {
       setHasConfirmedInitialRole(false);
       botHandledStepRef.current = null;
       advancingStepRef.current = null;
-      lastHandledNightSessionRef.current = 0;
+      lastHandledRoundRef.current = 0;
     } catch (err) {
       console.error('Failed to restart game:', err);
     }

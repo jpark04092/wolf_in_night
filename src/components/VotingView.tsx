@@ -36,6 +36,8 @@ export const VotingView: React.FC<VotingViewProps> = ({
   useEffect(() => {
     if (votedTarget) {
       setSelectedTarget(votedTarget);
+    } else {
+      setSelectedTarget(null);
     }
   }, [votedTarget]);
 
@@ -45,7 +47,7 @@ export const VotingView: React.FC<VotingViewProps> = ({
 
     async function checkVotedList() {
       try {
-        const resources = await webdav.propfind(`/rooms/${roomId}/votes`, '1');
+        const resources = await webdav.propfind(`/rooms/${roomId}/votes/`, '1');
         if (isMounted) {
           const userIds = resources
             .filter((r) => !r.isDir && r.name.endsWith('.txt'))

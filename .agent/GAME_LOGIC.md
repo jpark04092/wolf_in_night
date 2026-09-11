@@ -143,16 +143,18 @@
 게임 종료(`RESULT`) 화면에서 방장이 `[대기실로 돌아가기 (다시하기)]`를 클릭하거나 다음 게임을 시작할 때, 이전 게임의 잔여 데이터가 다음 판에 간섭하지 않도록 상태를 원자적으로 초기화합니다:
 
 1. **대기실 복귀 시 WebDAV 데이터 초기화 트랜잭션 (`handleRestartGame`)**:
-   - **룸 상태 초기화**: `state.json`을 `phase: 'WAITING'`, `currentStep: null`, `stepStartedAt: Date.now()`, `killed: null`로 리셋합니다.
-   - **투표 디렉터리 원자적 정리**: `/rooms/{roomId}/votes/` 폴더 내 이전 게임의 투표 파일들을 일괄 삭제하거나 폴더를 재생성하여 이전 투표 기록을 완전히 비웁니다.
+   - **룸 상태 초기화**: `state.json`을 `phase: 'WAITING'`, `currentStep: null`, `stepStartedAt: 0`, `killed: null`, `round` 보존으로 리셋합니다.
+   - **투표 디렉터리 원자적 정리 (`clearVotesDirectory`)**: `/rooms/{roomId}/votes/` 폴더 내 개별 투표 파일(`.txt`)들을 조회하여 일괄 삭제합니다. 폴더 자체를 삭제 후 재생성하지 않음으로써 WebDAV 301/405/409 충돌을 방지하고 다음 게임의 투표가 안전하게 초기화되도록 보장합니다.
    - **유저 카드 역할 초기화**: 접속 중인 유저 및 봇의 `{userId}.json`에서 `initialRole` 필드를 제거하고 `role: 'VILLAGER'`로 리셋합니다. 이때 플레이어의 정체성(`displayName`, `avatarId`, `sessionId`, `lastSeen`)은 안전하게 보존됩니다.
 2. **연속 게임 시작 시 직업 배정 및 모달 팝업 무결성 보장 (`syncState` & `handleStartGame`)**:
-   - **밤 세션 핑거프린트 추적 (`lastHandledNightSessionRef`)**: 각 클라이언트는 `state.stepStartedAt` 타임스탬프를 감지하여 새로운 밤 세션이 시작되었음을 식별합니다.
-   - **시작 직업 확인 모달(`RoleRevealModal`) 재활성화**: 새로운 게임이 시작되면 모든 플레이어(방장 및 게스트)의 `hasConfirmedInitialRole`을 즉시 `false`로 리셋하여, 매 게임마다 본인의 새로운 비밀 시작 카드를 4.5초간 전면 확인할 수 있도록 보장합니다.
-   - **이전 게임 직업 고착 방지**: `myInitialRole`이 이전 게임의 역할로 고착되지 않도록 대기실 복귀 시 로컬 상태를 클리어하고, 새 게임 시작 시 서버에서 새로 셔플되어 배정된 `initialRole`을 즉시 동기화합니다.
+   - **게임 회차 추적 (`state.round` & `lastHandledRoundRef`)**: 각 클라이언트는 매 턴 갱신되는 `stepStartedAt` 대신 `state.round` 변경을 감지하여 새로운 게임 회차(Round)를 식별합니다. 이를 통해 테스트 모드에서 `[다음 밤 단계 진행]`을 누르거나 턴이 전진할 때마다 방장의 시작 직업 팝업(`RoleRevealModal`)이 반복해서 다시 열리는 버그를 원천 차단합니다.
+   - **시작 직업 확인 모달(`RoleRevealModal`) 1회 활성화**: 새로운 게임 회차가 시작될 때만 모든 플레이어(방장 및 게스트)의 `hasConfirmedInitialRole`을 `false`로 리셋하여, 회차당 본인의 새로운 비밀 시작 카드를 전면 확인하고 확인 후에는 턴이 넘어가도 다시 뜨지 않도록 보장합니다.
+   - **이전 게임 직업 고착 방지**: `myInitialRole`이 이전 게임의 역할로 고착되지 않도록 대기실 복귀 시 로컬 상태를 클리어하고, 새 게임 회차 시작 시 서버에서 새로 셔플되어 배정된 `initialRole`을 즉시 동기화합니다.
 3. **게임 시작 중복 클릭 방지 (`isStartingGame`)**:
    - 방장이 `[게임 시작]` 버튼을 누르면 덱 셔플, WebDAV 카드 쓰기, 상태 전이 트랜잭션이 완료될 때까지 버튼이 비활성화되고 로딩 인디케이터가 표시되어 다중 요청 충돌을 방지합니다.
 4. **결과 발표(`RESULT`) 단계에서의 재입장 허용**:
    - 게임 진행 도중 이탈했거나 브라우저를 새로고침한 플레이어가 결과 발표 화면에서도 방에서 튕기지 않고 대기실 복귀 및 다음 판 리매치에 원활하게 합류할 수 있도록 입장 검증 조건을 개선(`existingState.phase !== 'WAITING' && existingState.phase !== 'RESULT'`)하였습니다.
+5. **두 번째 판 투표 정상화 보장 (`VotingView` & `clearVotesDirectory`)**:
+   - 새 게임 시작 시 이전 판 투표 파일이 완전히 제거되고, `VotingView` 내부의 `selectedTarget` 및 `hasVoted` 상태가 `null`/`false`로 정상 초기화되어 두 번째 게임부터 투표 카드가 잠기거나 제출 버튼이 사라지는 현상을 원천 방지합니다.
 
 

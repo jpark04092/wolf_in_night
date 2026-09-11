@@ -56,10 +56,12 @@
   "timerStartedAt": 1741678820000,
   "hostId": "user_a1b2c",
   "killed": ["user_d3e4f"] | null,
+  "round": 1,
   "fastMode": false,
   "testMode": false
 }
 ```
+* **round**: 게임 회차 카운터 (방 생성 시 0, 게임 시작 시 1씩 증가). 턴 스텝 이동 시 갱신되는 `stepStartedAt`과 게임 회차 구분을 독립시켜 턴 전환 시 시작 직업 모달 재팝업을 방지.
 
 ### (3) 유저 카드 상태: `{userId}.json`
 * **경로**: `/rooms/{roomId}/{userId}.json` (예: `user_x92a.json`)
@@ -105,10 +107,10 @@
 * **초기 비밀번호**: `0000` (서버 부팅 및 설치 시 자동 셋업). 관리자 대시보드에서 변경 및 0000 리셋 가능.
 
 ### (7) 리매치 및 대기실 복귀 시 파일 생명주기 (Rematch & Cleanup Lifecycle)
-한 게임이 끝난 후 방장이 `[대기실로 돌아가기]`를 누르면 다음 게임에 영향을 미치지 않도록 WebDAV 파일들을 원자적으로 정리합니다:
-* **`votes/` 디렉터리 초기화**: 이전 게임의 투표 파일(`votes/*.txt`)을 일괄 제거하고 폴더를 재생성하여 잔여 투표 데이터 간섭 차단.
+한 게임이 끝난 후 방장이 `[대기실로 돌아가기]`를 누르거나 새 게임을 시작할 때 이전 게임에 영향을 미치지 않도록 WebDAV 파일들을 안전하게 정리합니다:
+* **`votes/` 디렉터리 내 개별 투표 파일 정리 (`clearVotesDirectory`)**: 이전 게임의 투표 파일(`votes/*.txt`)들을 `PROPFIND /rooms/{roomId}/votes/`로 순회하여 개별 삭제(`delete`)합니다. 디렉터리 자체를 `DELETE`/`MKCOL`하지 않음으로써 WebDAV RFC 4918 디렉터리 리다이렉트(301/405) 및 폴더 누락(409) 충돌을 원천 차단하고, 두 번째 판 이후 투표 파일이 즉시 갱신되어 정상 투표가 가능하도록 보장합니다.
 * **`{userId}.json` 역할 리셋**: 유저의 `initialRole` 필드를 삭제하고 `role: 'VILLAGER'`로 리셋. 유저 신원 및 세션(`displayName`, `avatarId`, `sessionId`, `lastSeen`)은 보존.
-* **`state.json` 대기 상태 전이**: `phase: 'WAITING'`, `currentStep: null`, `stepStartedAt: Date.now()`, `killed: null`로 갱신하여 방 전체를 대기실 상태로 회귀.
+* **`state.json` 대기 상태 전이**: `phase: 'WAITING'`, `currentStep: null`, `stepStartedAt: 0`, `killed: null`, `round` 보존으로 갱신하여 방 전체를 대기실 상태로 회귀.
 
 
 ---
@@ -123,12 +125,13 @@
 | `put(path, data)` | `PUT` | 신규 파일 생성 또는 덮어쓰기 | `Content-Type: application/json` 또는 `text/plain` |
 | `mkcol(path)` | `MKCOL` | 신규 폴더/컬렉션 생성 | (없음) |
 | `move(src, dest)` | `MOVE` | 원자적 파일명 변경 및 스왑 트랜잭션 | `Destination: {destPath}`, `Overwrite: T` |
-| `delete(path)` | `DELETE` | 파일 또는 컬렉션 삭제 | (없음) |
+| `delete(path)` | `DELETE` | 파일 또는 컬렉션 삭제 (200, 204, 404 시 멱등 성공 처리) | (없음) |
 
 > **네트워크 & 동기화 안정성 보장 조치**:
 > * **CORS 프리플라이트 완벽 지원**: `Accept`, `Depth`, `Destination`, `Cache-Control`, `Pragma`, `Authorization` 등 커스텀 WebDAV 헤더 사전 승인.
 > * **캐시 무효화 및 PWA 바이패스**: 모든 WebDAV 및 API(`/api/*`, `/webdav/*`) 요청은 Service Worker 캐시를 바이패스하여 브라우저/프록시 304 또는 빈 상태 캐싱을 원천 차단.
-> * **RFC 4918 디렉터리 표준 준수**: WebDAV 컬렉션 조회(`PROPFIND`, `MKCOL`) 시 trailing slash(`/rooms/`, `/rooms/{id}/`)를 강제 보장하여 웹서버(Apache/Nginx)의 301 Moved Permanently 리다이렉트 실패 방지.
+> * **RFC 4918 디렉터리 표준 준수**: WebDAV 컬렉션 조회(`PROPFIND`, `MKCOL`) 시 trailing slash(`/rooms/`, `/rooms/{id}/`, `/rooms/{id}/votes/`)를 강제 보장하여 웹서버(Apache/Nginx)의 301 Moved Permanently 리다이렉트 실패 방지.
+> * **VirtualFS 폴백 조건 정밀화**: 정상적인 404(자원 미존재) 및 MKCOL 405(기존 디렉터리 존재) 응답이 가상 WebDAV(localStorage)로 잘못 폴백되지 않도록 HTML SPA 응답이나 501 미지원 시에만 한정 폴백.
 > * **로비 2초 자동 폴링**: 로비 진입 후 2초 간격으로 `listRooms()`를 호출하여 다른 기기에서 생성된 방을 새로고침 없이 실시간 갱신 (불필요한 반복 `mkcol` 호출 제거).
 > * **멀티 탭 세션 분리 (`sessionStorage`)**: 동일 기기/브라우저에서 탭을 여러 개 열어 테스트할 때 `sessionStorage`를 우선 사용하여 각 탭마다 고유한 `myId`를 부여, 플레이어 충돌 및 데이터 덮어쓰기 방지.
 > * **Multi-Tab BroadcastChannel VirtualFS 동기화**: 일시적 네트워크 순단이나 가상 폴백 모드에서도 `BroadcastChannel`과 `localStorage`를 통해 브라우저의 다른 탭들과 방 목록 및 상태를 실시간 상호 동기화.
