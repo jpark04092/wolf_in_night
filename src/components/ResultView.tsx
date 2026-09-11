@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Trophy,
@@ -31,6 +31,8 @@ export const ResultView: React.FC<ResultViewProps> = ({
   voteCounts,
   onRestartGame,
 }) => {
+  const [isRestarting, setIsRestarting] = useState(false);
+
   // Determine who won:
   // Werewolves in the game (final roles of players):
   const werewolfPlayers = players.filter((p) => p.role === 'WEREWOLF');
@@ -257,13 +259,19 @@ export const ResultView: React.FC<ResultViewProps> = ({
         {isHost ? (
           <button
             id="rematch-btn"
-            onClick={() => {
-              onRestartGame();
+            disabled={isRestarting}
+            onClick={async () => {
+              setIsRestarting(true);
+              try {
+                await onRestartGame();
+              } finally {
+                setIsRestarting(false);
+              }
             }}
-            className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-base shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"
+            className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black text-base shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"
           >
-            <RotateCcw className="w-5 h-5" />
-            <span>새로운 게임 시작 (대기실로 복귀)</span>
+            <RotateCcw className={`w-5 h-5 ${isRestarting ? 'animate-spin' : ''}`} />
+            <span>{isRestarting ? '대기실로 복귀 중...' : '새로운 게임 시작 (대기실로 복귀)'}</span>
           </button>
         ) : (
           <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800 text-center text-xs text-slate-400">

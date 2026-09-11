@@ -26,6 +26,7 @@ interface WaitingRoomViewProps {
   isHost: boolean;
   isAdmin?: boolean;
   testMode?: boolean;
+  isStarting?: boolean;
   players: PlayerInfo[];
   onStartGame: (deck: RoleType[], fastMode?: boolean, testMode?: boolean) => void;
   onAddBot: () => void;
@@ -41,6 +42,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   isHost,
   isAdmin = false,
   testMode = false,
+  isStarting = false,
   players,
   onStartGame,
   onAddBot,
@@ -375,14 +377,23 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         {isHost ? (
           <button
             id="start-game-btn"
-            disabled={!canStart}
+            disabled={!canStart || isStarting}
             onClick={() => {
               onStartGame(previewDeck, fastMode, testMode);
             }}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-base shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"
           >
-            <Play className="w-5 h-5 fill-white" />
-            <span>게임 시작 (밤 단계 돌입)</span>
+            {isStarting ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>게임 준비 중...</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-5 h-5 fill-white" />
+                <span>게임 시작 (밤 단계 돌입)</span>
+              </>
+            )}
           </button>
         ) : (
           <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center text-xs text-slate-400 flex items-center justify-center gap-2">

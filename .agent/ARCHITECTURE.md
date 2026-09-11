@@ -104,6 +104,13 @@
 ```
 * **초기 비밀번호**: `0000` (서버 부팅 및 설치 시 자동 셋업). 관리자 대시보드에서 변경 및 0000 리셋 가능.
 
+### (7) 리매치 및 대기실 복귀 시 파일 생명주기 (Rematch & Cleanup Lifecycle)
+한 게임이 끝난 후 방장이 `[대기실로 돌아가기]`를 누르면 다음 게임에 영향을 미치지 않도록 WebDAV 파일들을 원자적으로 정리합니다:
+* **`votes/` 디렉터리 초기화**: 이전 게임의 투표 파일(`votes/*.txt`)을 일괄 제거하고 폴더를 재생성하여 잔여 투표 데이터 간섭 차단.
+* **`{userId}.json` 역할 리셋**: 유저의 `initialRole` 필드를 삭제하고 `role: 'VILLAGER'`로 리셋. 유저 신원 및 세션(`displayName`, `avatarId`, `sessionId`, `lastSeen`)은 보존.
+* **`state.json` 대기 상태 전이**: `phase: 'WAITING'`, `currentStep: null`, `stepStartedAt: Date.now()`, `killed: null`로 갱신하여 방 전체를 대기실 상태로 회귀.
+
+
 ---
 
 ## 3. WebDAV 클라이언트 I/O 인터페이스 (`/src/lib/webdav.ts`)
