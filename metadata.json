@@ -1,0 +1,6 @@
+{
+  "name": "One Night Werewolf",
+  "description": "WebDAV 기반 모바일 웹/PWA 한밤의 늑대인간 (One Night Ultimate Werewolf) 보드게임",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
