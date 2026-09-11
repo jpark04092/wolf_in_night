@@ -80,3 +80,8 @@ export interface MemoryCard {
   isFlipped: boolean;
   isMatched: boolean;
 }
+
+export interface AdminConfigFile {
+  passwordHash: string;
+  updatedAt: number;
+}

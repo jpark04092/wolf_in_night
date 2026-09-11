@@ -37,6 +37,7 @@
 │       ├── DiscussionView.tsx          # 5분 아침 토론 타이머 및 팁
 │       ├── VotingView.tsx              # 의심자 지목 투표 및 실시간 투표자 폴링
 │       ├── ResultView.tsx              # 처형자 발표, 시작/최종 직업 공개, 승패 판정, 폭죽 효과
+│       ├── AdminModal.tsx              # 관리자 인증(0000), 비밀번호 변경, 방 개별/일괄 삭제 대시보드
 │       ├── PWAInstallButton.tsx        # 모바일 PWA 홈 화면 추가 버튼
 │       └── OfflineIndicator.tsx        # 오프라인 네트워크 단절 배너
 ├── public/
@@ -116,6 +117,12 @@ export interface PlayerInfo {
 // 중앙 카드 파일 (center.json)
 export interface CenterCardsFile {
   cards: RoleType[];
+}
+
+// 관리자 보안 설정 파일 (admin.json)
+export interface AdminConfigFile {
+  passwordHash: string;
+  updatedAt: number;
 }
 ```
 
