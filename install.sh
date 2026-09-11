@@ -90,6 +90,16 @@ mkdir -p "${ROOMS_DIR}"
 mkdir -p /var/lock/apache2
 chown -R www-data:www-data /var/lock/apache2
 
+# admin.json 초기 설정 (초기 비밀번호: 0000)
+if [ ! -f "${WEBDAV_DIR}/admin.json" ]; then
+  cat <<'EOF' > "${WEBDAV_DIR}/admin.json"
+{
+  "password": "0000",
+  "updatedAt": 1741678800000
+}
+EOF
+fi
+
 # 원격 Git 저장소 URL 감지
 REPO_URL=""
 if git -C "${SCRIPT_DIR}" remote get-url origin >/dev/null 2>&1; then

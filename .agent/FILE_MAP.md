@@ -119,9 +119,10 @@ export interface CenterCardsFile {
   cards: RoleType[];
 }
 
-// 관리자 보안 설정 파일 (admin.json)
+// 관리자 설정 파일 (admin.json)
 export interface AdminConfigFile {
-  passwordHash: string;
+  password: string;
+  passwordHash?: string;
   updatedAt: number;
 }
 ```

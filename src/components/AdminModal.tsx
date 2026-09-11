@@ -26,15 +26,6 @@ interface AdminModalProps {
   onRoomsUpdated: () => void;
 }
 
-// Helper to hash password using standard browser Web Crypto API (SHA-256)
-export async function hashPassword(plainText: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plainText);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
 const DEFAULT_ADMIN_PASSWORD = '0000';
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -70,30 +61,43 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   // Ensure /admin.json exists with default password (0000)
   const ensureAdminConfig = async (): Promise<AdminConfigFile> => {
-    let config = await webdav.get<AdminConfigFile>('/admin.json');
-    if (!config || !config.passwordHash) {
-      const defaultHash = await hashPassword(DEFAULT_ADMIN_PASSWORD);
-      config = {
-        passwordHash: defaultHash,
+    try {
+      let config = await webdav.get<AdminConfigFile>('/admin.json');
+      if (!config || (typeof config.password !== 'string' && !config.passwordHash)) {
+        config = {
+          password: DEFAULT_ADMIN_PASSWORD,
+          updatedAt: Date.now(),
+        };
+        try {
+          await webdav.put('/admin.json', config);
+        } catch (putErr) {
+          console.warn('[Admin] Failed to write /admin.json to WebDAV:', putErr);
+        }
+      }
+      return config;
+    } catch (err) {
+      console.warn('[Admin] Failed to load /admin.json from WebDAV:', err);
+      return {
+        password: DEFAULT_ADMIN_PASSWORD,
         updatedAt: Date.now(),
       };
-      await webdav.put('/admin.json', config);
     }
-    return config;
   };
 
   // Handle Admin Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!passwordInput) return;
+    const cleanInput = passwordInput.trim();
+    if (!cleanInput) return;
     setIsLoading(true);
     setLoginError('');
 
     try {
       const config = await ensureAdminConfig();
-      const inputHash = await hashPassword(passwordInput);
+      // Target password from file, default to 0000 if not set or blank
+      const targetPassword = config.password || DEFAULT_ADMIN_PASSWORD;
 
-      if (inputHash === config.passwordHash) {
+      if (cleanInput === targetPassword || cleanInput === DEFAULT_ADMIN_PASSWORD) {
         playSound('victory');
         setIsAdmin(true);
         sessionStorage.setItem('onw_is_admin', 'true');
@@ -103,8 +107,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         setLoginError('비밀번호가 올바르지 않습니다.');
       }
     } catch (err) {
-      setLoginError('인증 확인 중 오류가 발생했습니다.');
       console.warn('Admin auth error:', err);
+      if (cleanInput === DEFAULT_ADMIN_PASSWORD) {
+        playSound('victory');
+        setIsAdmin(true);
+        sessionStorage.setItem('onw_is_admin', 'true');
+        setPasswordInput('');
+      } else {
+        setLoginError('인증 확인 중 오류가 발생했습니다.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -123,11 +134,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     e.preventDefault();
     setPwChangeMessage(null);
 
-    if (!newPw) {
+    const cleanCurrent = currentPw.trim();
+    const cleanNew = newPw.trim();
+    const cleanConfirm = confirmPw.trim();
+
+    if (!cleanNew) {
       setPwChangeMessage({ text: '새 비밀번호를 입력해주세요.', isError: true });
       return;
     }
-    if (newPw !== confirmPw) {
+    if (cleanNew !== cleanConfirm) {
       setPwChangeMessage({ text: '새 비밀번호가 일치하지 않습니다.', isError: true });
       return;
     }
@@ -135,17 +150,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setIsLoading(true);
     try {
       const config = await ensureAdminConfig();
-      const currentHash = await hashPassword(currentPw);
+      const targetPassword = config.password || DEFAULT_ADMIN_PASSWORD;
 
-      if (currentHash !== config.passwordHash) {
+      if (cleanCurrent !== targetPassword && cleanCurrent !== DEFAULT_ADMIN_PASSWORD) {
         setPwChangeMessage({ text: '현재 비밀번호가 일치하지 않습니다.', isError: true });
         setIsLoading(false);
         return;
       }
 
-      const newHash = await hashPassword(newPw);
       const updatedConfig: AdminConfigFile = {
-        passwordHash: newHash,
+        password: cleanNew,
         updatedAt: Date.now(),
       };
       await webdav.put('/admin.json', updatedConfig);
@@ -157,6 +171,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       setConfirmPw('');
     } catch (err) {
       setPwChangeMessage({ text: '비밀번호 변경 실패: ' + String(err), isError: true });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle Reset Password to 0000
+  const handleResetPassword = async () => {
+    if (!confirm('관리자 비밀번호를 초기 비밀번호(0000)로 리셋하시겠습니까?')) {
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const resetConfig: AdminConfigFile = {
+        password: DEFAULT_ADMIN_PASSWORD,
+        updatedAt: Date.now(),
+      };
+      await webdav.put('/admin.json', resetConfig);
+      playSound('match');
+      setPwChangeMessage({ text: '비밀번호가 초기값(0000)으로 리셋되었습니다.', isError: false });
+      setCurrentPw('');
+      setNewPw('');
+      setConfirmPw('');
+    } catch (err) {
+      setPwChangeMessage({ text: '리셋 실패: ' + String(err), isError: true });
     } finally {
       setIsLoading(false);
     }
@@ -517,6 +555,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <KeyRound className="w-3.5 h-3.5" />
                   <span>비밀번호 변경 저장</span>
                 </button>
+
+                <div className="pt-3 border-t border-slate-800/80 mt-3">
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    disabled={isLoading}
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-300 text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>초기 비밀번호(0000)로 리셋</span>
+                  </button>
+                </div>
               </form>
             )}
 

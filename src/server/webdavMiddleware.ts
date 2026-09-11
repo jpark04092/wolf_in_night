@@ -20,11 +20,19 @@ export function resolveWebdavPath(urlPath: string): string {
   return path.join(STORAGE_DIR, safeRelative);
 }
 
-// Ensure base rooms folder exists
+// Ensure base rooms folder and default admin.json exist
 export async function initStorage() {
   const roomsDir = path.join(STORAGE_DIR, 'rooms');
   if (!existsSync(roomsDir)) {
     await fs.mkdir(roomsDir, { recursive: true });
+  }
+  const adminFile = path.join(STORAGE_DIR, 'admin.json');
+  if (!existsSync(adminFile)) {
+    const defaultAdmin = {
+      password: '0000',
+      updatedAt: Date.now(),
+    };
+    await fs.writeFile(adminFile, JSON.stringify(defaultAdmin, null, 2), 'utf-8');
   }
 }
 

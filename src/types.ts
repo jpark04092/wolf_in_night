@@ -82,6 +82,7 @@ export interface MemoryCard {
 }
 
 export interface AdminConfigFile {
-  passwordHash: string;
+  password: string;
+  passwordHash?: string;
   updatedAt: number;
 }
