@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { PlayerInfo, RoleType } from '../types';
 import { ROLES, generateDefaultDeck } from '../lib/roles';
-import { playSound } from '../lib/audio';
 
 interface WaitingRoomViewProps {
   roomId: string;
@@ -103,7 +102,6 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              playSound('click');
               setShowQrModal(true);
             }}
             className="p-2.5 rounded-2xl bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 transition shadow-md flex items-center gap-1 text-xs font-semibold"
@@ -160,7 +158,6 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => {
-                  playSound('click');
                   onAddBot();
                 }}
                 className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold border border-indigo-500/30 flex items-center gap-1 transition"
@@ -309,7 +306,6 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                playSound('click');
                 setFastMode((v) => !v);
               }}
               className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-0.5 ${
@@ -353,7 +349,6 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                playSound('click');
                 if (!isAdmin && onOpenAdmin) {
                   onOpenAdmin();
                 } else if (onToggleTestMode) {
@@ -382,7 +377,6 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
             id="start-game-btn"
             disabled={!canStart}
             onClick={() => {
-              playSound('howl');
               onStartGame(previewDeck, fastMode, testMode);
             }}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-base shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"

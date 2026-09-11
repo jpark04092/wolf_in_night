@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { PlayerInfo, RoleType } from '../types';
 import { ROLES } from '../lib/roles';
-import { playSound } from '../lib/audio';
 
 interface ResultViewProps {
   isHost: boolean;
@@ -79,7 +78,6 @@ export const ResultView: React.FC<ResultViewProps> = ({
   }
 
   useEffect(() => {
-    playSound('victory');
     confetti({
       particleCount: 80,
       spread: 70,
@@ -260,7 +258,6 @@ export const ResultView: React.FC<ResultViewProps> = ({
           <button
             id="rematch-btn"
             onClick={() => {
-              playSound('click');
               onRestartGame();
             }}
             className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-base shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"

@@ -24,8 +24,7 @@
 │   │   └── webdavMiddleware.ts         # Vite dev/preview 및 Express 공용 WebDAV & /api/rooms Connect 미들웨어
 │   ├── lib/
 │   │   ├── webdav.ts                   # WebDAV 클라이언트 (PROPFIND, GET, PUT, MKCOL, MOVE, DELETE)
-│   │   ├── roles.ts                    # 9개 직업 정의, 덱 생성 함수, 밤 스텝 순서
-│   │   └── audio.ts                    # Web Audio API 기반 효과음 합성기 (외부 에셋 불필요)
+│   │   └── roles.ts                    # 9개 직업 정의, 덱 생성 함수, 밤 스텝 순서
 │   ├── hooks/
 │   │   └── useWakeLock.ts              # Screen Wake Lock API 훅 (모바일 절전 방지)
 │   └── components/
@@ -133,16 +132,9 @@ export interface AdminConfigFile {
 
 ---
 
-## 3. Web Audio API 효과음 목록 (`src/lib/audio.ts`)
+## 3. 음향 효과 (Sound Effects) 정책
 
-별도의 무거운 MP3 오디오 파일 없이, 브라우저 내장 `AudioContext`의 오실레이터(Oscillator)를 사용하여 100% 무중단 합성 재생합니다:
-* `'click'`: 버튼 터치 피드백 틱
-* `'flip'`: 메모리 카드 뒤집기
-* `'match'`: 메모리 게임 짝 맞춤 성공
-* `'howl'`: 늑대 하울링 (밤 시작)
-* `'morning'`: 아침 토론 시작 종소리
-* `'vote'`: 투표 등록 비프음
-* `'victory'`: 승리 팡파르
+* **음향 효과 미사용**: 현재 시스템에서는 불필요한 청각 피드백 및 모바일 환경에서의 오디오 자동재생 제한 간섭을 방지하기 위해 모든 음향 효과(Web Audio API 및 오디오 에셋)가 완전히 제거되었습니다 (`src/lib/audio.ts` 및 호출부 전체 제거 완료).
 
 ---
 

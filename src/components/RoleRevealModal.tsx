@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { RoleType } from '../types';
 import { ROLES } from '../lib/roles';
-import { playSound } from '../lib/audio';
 
 interface RoleRevealModalProps {
   role: RoleType;
@@ -31,7 +30,6 @@ export const RoleRevealModal: React.FC<RoleRevealModalProps> = ({
   const roleDef = ROLES[role];
 
   useEffect(() => {
-    playSound('flip');
     const startTime = Date.now();
     const interval = setInterval(() => {
       const elapsed = (Date.now() - startTime) / 1000;
@@ -132,7 +130,6 @@ export const RoleRevealModal: React.FC<RoleRevealModalProps> = ({
           {/* Confirmation Button */}
           <button
             onClick={() => {
-              playSound('click');
               onClose();
             }}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 font-bold text-sm text-white shadow-lg transition active:scale-95 flex items-center justify-center gap-2"

@@ -15,7 +15,6 @@ import {
 import { PlayerInfo, RoleType, NightStep, CenterCardsFile, UserCardFile } from '../types';
 import { ROLES } from '../lib/roles';
 import { webdav } from '../lib/webdav';
-import { playSound } from '../lib/audio';
 
 interface NightActionModalProps {
   roomId: string;
@@ -107,7 +106,6 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
   // Seer Action
   const handleSeerPlayerLook = async (targetId: string) => {
     setIsLoading(true);
-    playSound('flip');
     try {
       const userFile = await webdav.get<UserCardFile>(`/rooms/${roomId}/${targetId}.json`);
       if (userFile) {
@@ -126,7 +124,6 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
     if (selectedCenterIndices.includes(centerIndex)) return;
     if (selectedCenterIndices.length >= 2) return;
 
-    playSound('flip');
     const nextIndices = [...selectedCenterIndices, centerIndex];
     setSelectedCenterIndices(nextIndices);
 
@@ -150,7 +147,6 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
 
   // Werewolf Lone Wolf center look
   const handleWerewolfCenterLook = async (centerIndex: number) => {
-    playSound('flip');
     setSelectedCenterIndices([centerIndex]);
     try {
       const centerData = await webdav.get<CenterCardsFile>(`/rooms/${roomId}/center.json`);
@@ -167,7 +163,6 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
   const handleRobberSwap = async () => {
     if (!selectedTarget) return;
     setIsLoading(true);
-    playSound('flip');
     try {
       const roomPrefix = `/rooms/${roomId}`;
       const myFile = `${roomPrefix}/${myId}.json`;
@@ -206,7 +201,6 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
   const handleTroublemakerSwap = async () => {
     if (troubleTargets.length !== 2) return;
     setIsLoading(true);
-    playSound('flip');
     try {
       const [targetA, targetB] = troubleTargets;
       const roomPrefix = `/rooms/${roomId}`;
@@ -584,7 +578,6 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
           <div className="mt-4 pt-3 border-t border-slate-800">
             <button
               onClick={() => {
-                playSound('click');
                 onCompleteAction();
               }}
               className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 font-bold text-sm text-white shadow-xl transition active:scale-98 flex items-center justify-center gap-2"

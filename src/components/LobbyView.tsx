@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { webdav, WebDAVResource } from '../lib/webdav';
 import { RoomInfo } from '../types';
-import { playSound } from '../lib/audio';
 import { PWAInstallButton } from './PWAInstallButton';
 import { VersionBadge } from './VersionBadge';
 import { AdminModal } from './AdminModal';
@@ -133,7 +132,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
       .replace(/\s+/g, '_');
     if (!cleanId) return;
 
-    playSound('click');
     setIsLoading(true);
     try {
       // 0. Check if room already exists
@@ -158,7 +156,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
   };
 
   const handleQuickJoin = (rId: string) => {
-    playSound('click');
     onJoinRoom(rId, displayName, false);
   };
 
@@ -168,7 +165,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
     if (!confirm(`[관리자] 방 [${targetRoomId}]을(를) 영구 삭제하시겠습니까?`)) {
       return;
     }
-    playSound('click');
     setIsLoading(true);
     try {
       await webdav.delete(`/rooms/${targetRoomId}`);
@@ -201,7 +197,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
           {isAdmin ? (
             <button
               onClick={() => {
-                playSound('click');
                 setShowAdminModal(true);
               }}
               className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1 transition shadow-sm"
@@ -213,7 +208,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
           ) : (
             <button
               onClick={() => {
-                playSound('click');
                 setShowAdminModal(true);
               }}
               className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
@@ -251,7 +245,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
           <button
             id="create-room-open-btn"
             onClick={() => {
-              playSound('click');
               setShowCreateModal(true);
             }}
             className="w-full flex items-center justify-center gap-2.5 p-4 rounded-3xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold shadow-lg shadow-indigo-950/50 transition active:scale-98 border border-indigo-400/30"
@@ -324,7 +317,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
             </h2>
             <button
               onClick={() => {
-                playSound('click');
                 fetchRooms();
               }}
               disabled={isLoading}

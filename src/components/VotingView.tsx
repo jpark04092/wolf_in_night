@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { PlayerInfo } from '../types';
 import { webdav } from '../lib/webdav';
-import { playSound } from '../lib/audio';
 
 interface VotingViewProps {
   roomId: string;
@@ -73,14 +72,12 @@ export const VotingView: React.FC<VotingViewProps> = ({
 
   const handleSelectCandidate = (candidateId: string) => {
     if (hasVoted) return; // already submitted vote
-    playSound('click');
     setSelectedTarget(candidateId);
   };
 
   const handleSubmitVote = async () => {
     if (!currentTarget || isSubmitting || hasVoted) return;
     setIsSubmitting(true);
-    playSound('vote');
     try {
       // PUT /webdav/rooms/room_101/votes/user_{myId}.txt with target ID content
       await webdav.put(`/rooms/${roomId}/votes/${myId}.txt`, currentTarget);
@@ -194,7 +191,6 @@ export const VotingView: React.FC<VotingViewProps> = ({
           <button
             id="tally-result-btn"
             onClick={() => {
-              playSound('vote');
               onTallyResult();
             }}
             className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"

@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { PlayerInfo, RoleType } from '../types';
 import { ROLES } from '../lib/roles';
-import { playSound } from '../lib/audio';
 
 interface DiscussionViewProps {
   isHost: boolean;
@@ -32,10 +31,6 @@ export const DiscussionView: React.FC<DiscussionViewProps> = ({
   onStartVoting,
 }) => {
   const [timeLeft, setTimeLeft] = useState<number>(durationSeconds);
-
-  useEffect(() => {
-    playSound('morning');
-  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -154,7 +149,6 @@ export const DiscussionView: React.FC<DiscussionViewProps> = ({
           <button
             id="start-voting-btn"
             onClick={() => {
-              playSound('click');
               onStartVoting();
             }}
             className="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-black text-base shadow-xl shadow-rose-950/60 transition active:scale-98 flex items-center justify-center gap-2"

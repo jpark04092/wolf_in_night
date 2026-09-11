@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { webdav } from '../lib/webdav';
 import { RoomInfo, AdminConfigFile } from '../types';
-import { playSound } from '../lib/audio';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -98,18 +97,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       const targetPassword = config.password || DEFAULT_ADMIN_PASSWORD;
 
       if (cleanInput === targetPassword || cleanInput === DEFAULT_ADMIN_PASSWORD) {
-        playSound('victory');
         setIsAdmin(true);
         sessionStorage.setItem('onw_is_admin', 'true');
         setPasswordInput('');
       } else {
-        playSound('flip');
         setLoginError('비밀번호가 올바르지 않습니다.');
       }
     } catch (err) {
       console.warn('Admin auth error:', err);
       if (cleanInput === DEFAULT_ADMIN_PASSWORD) {
-        playSound('victory');
         setIsAdmin(true);
         sessionStorage.setItem('onw_is_admin', 'true');
         setPasswordInput('');
@@ -123,7 +119,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   // Handle Admin Logout
   const handleLogout = () => {
-    playSound('click');
     setIsAdmin(false);
     sessionStorage.removeItem('onw_is_admin');
     onClose();
@@ -164,7 +159,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       };
       await webdav.put('/admin.json', updatedConfig);
 
-      playSound('match');
       setPwChangeMessage({ text: '비밀번호가 성공적으로 변경되었습니다!', isError: false });
       setCurrentPw('');
       setNewPw('');
@@ -188,7 +182,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         updatedAt: Date.now(),
       };
       await webdav.put('/admin.json', resetConfig);
-      playSound('match');
       setPwChangeMessage({ text: '비밀번호가 초기값(0000)으로 리셋되었습니다.', isError: false });
       setCurrentPw('');
       setNewPw('');
@@ -205,7 +198,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     if (!confirm(`정말 방 [${roomId}]을(를) 영구 삭제하시겠습니까?\n모든 게임 데이터가 제거됩니다.`)) {
       return;
     }
-    playSound('click');
     setIsLoading(true);
     try {
       await webdav.delete(`/rooms/${roomId}`);
@@ -233,7 +225,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       for (const r of emptyRooms) {
         await webdav.delete(`/rooms/${r.id}`);
       }
-      playSound('match');
       onRoomsUpdated();
     } catch (err) {
       alert('일괄 정리 실패: ' + String(err));
@@ -257,7 +248,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       for (const r of rooms) {
         await webdav.delete(`/rooms/${r.id}`);
       }
-      playSound('match');
       onRoomsUpdated();
     } catch (err) {
       alert('전체 삭제 실패: ' + String(err));
@@ -367,7 +357,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             <div className="flex items-center border-b border-slate-800 bg-slate-950/40 px-3 pt-2 gap-1">
               <button
                 onClick={() => {
-                  playSound('click');
                   setActiveTab('rooms');
                 }}
                 className={`flex-1 py-2 rounded-t-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border-b-2 ${
@@ -382,7 +371,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
               <button
                 onClick={() => {
-                  playSound('click');
                   setActiveTab('security');
                 }}
                 className={`flex-1 py-2 rounded-t-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border-b-2 ${
@@ -397,7 +385,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
               <button
                 onClick={() => {
-                  playSound('click');
                   setActiveTab('system');
                 }}
                 className={`flex-1 py-2 rounded-t-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border-b-2 ${

@@ -12,7 +12,6 @@ import {
   HelpCircle,
   Trophy,
 } from 'lucide-react';
-import { playSound } from '../lib/audio';
 
 interface MinigameCard {
   id: number;
@@ -85,8 +84,6 @@ export const MemoryMinigame: React.FC = () => {
     if (card.isFlipped || card.isMatched) return;
     if (flippedIndices.length >= 2) return;
 
-    playSound('flip');
-
     const nextCards = [...cards];
     nextCards[index] = { ...card, isFlipped: true };
     setCards(nextCards);
@@ -101,7 +98,6 @@ export const MemoryMinigame: React.FC = () => {
 
       if (firstCard.pairId === secondCard.pairId) {
         // MATCH!
-        playSound('match');
         setIsProcessing(true);
         setTimeout(() => {
           setCards((prev) => {

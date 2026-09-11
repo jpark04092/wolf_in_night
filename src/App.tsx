@@ -28,7 +28,6 @@ import {
 } from './types';
 import { ROLES, NIGHT_STEPS, getNextNightStep } from './lib/roles';
 import { webdav, WebDAVResource } from './lib/webdav';
-import { playSound } from './lib/audio';
 import { useWakeLock } from './hooks/useWakeLock';
 import { LobbyView } from './components/LobbyView';
 import { WaitingRoomView } from './components/WaitingRoomView';
@@ -154,7 +153,6 @@ export default function App() {
           : '⏱️ 일반 모드 복구: 타이머가 정상 재개되었습니다.',
         'info'
       );
-      playSound('click');
     } catch (err) {
       console.warn('Failed to toggle test mode:', err);
     }
@@ -816,7 +814,6 @@ export default function App() {
                   setRoomState(updatedState);
                   setIsHost(true);
                   showToast('👑 방장이 부재중이거나 퇴장하여 새로운 방장이 되었습니다!', 'success');
-                  playSound('click');
                 }
                 // If previous host was an offline zombie in waiting room, clean up their file
                 if (isHostOfflineInWaiting && currentHost) {
@@ -1300,7 +1297,6 @@ export default function App() {
           {/* Admin Dashboard / Login Button */}
           <button
             onClick={() => {
-              playSound('click');
               setShowAdminModal(true);
             }}
             className={`p-1.5 rounded-xl transition ${
@@ -1441,7 +1437,6 @@ export default function App() {
                     </span>
                     <button
                       onClick={() => {
-                        playSound('click');
                         advanceNightStep(roomState.currentStep!);
                       }}
                       className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5"
