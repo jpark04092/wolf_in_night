@@ -16,6 +16,7 @@
 │   ├── main.tsx                        # React DOM 엔트리포인트 (PWA 서비스 워커 등록)
 │   ├── App.tsx                         # 최상위 상태 관리자, WebDAV 폴링(800ms) 및 페이즈 라우팅
 │   ├── types.ts                        # 공통 타입 및 인터페이스 (RoleType, RoomState 등)
+│   ├── version.ts                      # 빌드타임 버전, 빌드일시, Git Commit Hash 정의
 │   ├── index.css                       # Tailwind CSS (@import "tailwindcss";)
 │   ├── lib/
 │   │   ├── webdav.ts                   # WebDAV 클라이언트 (PROPFIND, GET, PUT, MKCOL, MOVE, DELETE)
@@ -25,6 +26,7 @@
 │   │   └── useWakeLock.ts              # Screen Wake Lock API 훅 (모바일 절전 방지)
 │   └── components/
 │       ├── LobbyView.tsx               # 방 목록(PROPFIND), 방 생성 모달, 닉네임 설정
+│       ├── VersionBadge.tsx            # 상단 배포 버전/커밋/빌드시각 뱃지 및 상세 확인 모달
 │       ├── WaitingRoomView.tsx         # 참여자 목록, QR 코드 모달, 가상 봇 추가/제거, 게임 시작
 │       ├── MemoryMinigame.tsx          # 4x4 메모리 카드 맞추기 (블러핑 은폐)
 │       ├── NightActionModal.tsx        # 밤 직업별 오버레이 액션 (3단계 MOVE 스왑 포함)
@@ -40,6 +42,8 @@
 ├── server.ts                           # Express + WebDAV 미들웨어 + Vite SSR/Dev 서버
 ├── vite.config.ts                      # Vite 번들러 설정
 ├── package.json                        # 종속성 및 스크립트 정의
+├── install.sh                          # Apache2 가상호스트, WebDAV 및 권한 1-Click 자동 설치 스크립트
+├── update.sh                           # 원격 release 브랜치 1-Click 최신 배포 갱신 스크립트
 ├── metadata.json                       # AI Studio 메타데이터 (이름, 권한, 주요 역량)
 ├── AGENTS.md                           # AI 에이전트 지침 및 .agent 동기화 규칙 (시스템 자동 주입)
 └── AGENT.md                            # 에이전트 규칙 별칭 파일

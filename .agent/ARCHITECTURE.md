@@ -211,29 +211,29 @@ NAS에 이미 Apache가 설치되어 `/var/www`를 사용 중인 경우:
    sudo chown -R www-data:www-data /var/lock/apache2
    sudo chmod -R 775 /var/www/werewolf/webdav
    ```
-4. **GitHub Actions 자동 빌드 & NAS release 브랜치 연동 (불필요한 소스코드 제외, 오직 dist만)**:
-   > 본 저장소의 `.github/workflows/deploy.yml`은 Codespaces 또는 로컬에서 `git push` 시 GitHub Actions(Node 20 LTS)에서 자동으로 빌드를 수행하고, **오직 순수 `dist/` 산출물만 `release` 브랜치에 푸시**합니다. (소스코드, node_modules, package.json 등 불필요한 파일이 전혀 포함되지 않음)
-   
-   * **NAS에서 오직 배포 파일(dist)만 클론하기**:
-     ```bash
-     mkdir -p /var/www/werewolf/dist
-     cd /var/www/werewolf/dist
-     # release 브랜치만 단독 클론 (용량 최소화)
-     git clone -b release --single-branch <저장소_URL> .
-     sudo chown -R www-data:www-data /var/www/werewolf/dist
-     ```
-   * **이후 업데이트 시**:
-     ```bash
-     cd /var/www/werewolf/dist
-     git pull origin release
-     sudo chown -R www-data:www-data /var/www/werewolf/dist
-     ```
-5. **Apache VirtualHost 설정 (`/etc/apache2/sites-available/werewolf.conf`)**:
+4. **1-Click 자동 설치 스크립트 (`install.sh`)**:
+   - 신규 서버나 다른 환경에서 클론 후 Apache 가상호스트, 필수 모듈(`dav`, `dav_fs`, `headers`, `rewrite`), WebDAV 폴더, CORS 헤더 및 권한을 한 번에 자동 구성합니다.
+   ```bash
+   sudo chmod +x install.sh update.sh
+   sudo ./install.sh [설치경로(기본 /var/www/werewolf)] [포트(기본 80)] [도메인/IP(기본 _)]
+   # 예: sudo ./install.sh /var/www/werewolf 80 _
+   ```
+
+5. **1-Click 릴리즈 업데이트 스크립트 (`update.sh`)**:
+   - GitHub Actions가 `main` 브랜치 푸시 시 `dist/` 산출물과 `update.sh`를 `release` 브랜치에 자동 강제 푸시합니다.
+   - 서버에서 최신 배포본으로 갱신할 때 단 한 줄로 안전하게 fetch, reset, 권한 복구 및 `version.json` 확인을 수행합니다.
+   ```bash
+   # dist 디렉터리 또는 werewolf 루트에서 실행:
+   ./update.sh
+   # (배포 버전 및 Git 커밋 해시가 터미널에 자동 출력됨)
+   ```
+
+6. **Apache VirtualHost 설정 참조 (`/etc/apache2/sites-available/werewolf.conf`)**:
    ```apache
    DavLockDB /var/lock/apache2/DavLock
 
    <VirtualHost *:80>
-       ServerName your-nas-ip-or-domain
+       ServerName _
        DocumentRoot /var/www/werewolf/dist
 
        # 1. WebDAV 저장소 엔드포인트
@@ -246,10 +246,14 @@ NAS에 이미 Apache가 설치되어 `/var/www`를 사용 중인 경우:
 
            # WebDAV 브라우저 연동용 CORS 헤더
            Header always set Access-Control-Allow-Origin "*"
-           Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, MKCOL, MOVE, PROPFIND, OPTIONS"
-           Header always set Access-Control-Allow-Headers "Content-Type, Depth, Destination, Authorization"
-           Header always set Access-Control-Expose-Headers "DAV, Location"
+           Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, MKCOL, MOVE, PROPFIND, OPTIONS, HEAD"
+           Header always set Access-Control-Allow-Headers "Content-Type, Depth, Destination, Authorization, Cache-Control, Pragma, X-Requested-With, Accept"
+           Header always set Access-Control-Expose-Headers "DAV, Location, Date"
            Header always set DAV "1, 2"
+
+           # 실시간 상태 보장용 캐시 무효화
+           Header always set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
+           Header always set Pragma "no-cache"
        </Directory>
 
        # 2. React SPA 라우팅 지원 (HTML5 History API)
@@ -266,6 +270,10 @@ NAS에 이미 Apache가 설치되어 `/var/www`를 사용 중인 경우:
        </Directory>
    </VirtualHost>
    ```
-4. **빌드 결과물 복사**:
-   로컬에서 `npm run build` 실행 후 생성된 `dist/` 폴더 안의 모든 파일을 NAS의 `/var/www/werewolf/dist/`로 업로드.
+
+7. **빌드 결과물 복사 및 릴리즈 브랜치 배포**:
+   - GitHub Actions(`.github/workflows/deploy.yml`)가 main 푸시 시 자동으로 `npm run build`를 수행하여 빌드 결과물(`dist/`)을 `release` 브랜치에 강제 푸시합니다.
+   - 빌드 시 `version.json`이 자동 생성되어 `version`, `commit`, `buildTime(KST)`이 기록되며, 프론트엔드 코드 번들에도 전역 주입됩니다.
+   - 로비 및 인게임 화면 최상단에 `VersionBadge`(`v1.1.0 · #commit`)가 상시 표시되어 최신 배포 여부를 즉시 확인할 수 있습니다.
+   - 서버 터미널에서도 `cat /var/www/werewolf/dist/version.json`으로 배포 상태를 바로 확인할 수 있습니다.
 

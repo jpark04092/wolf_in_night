@@ -32,6 +32,7 @@ import { VotingView } from './components/VotingView';
 import { ResultView } from './components/ResultView';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { VersionBadge } from './components/VersionBadge';
 
 export default function App() {
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -597,13 +598,16 @@ export default function App() {
         </div>
       </header>
 
-      {/* Screen Wake Lock Status Bar (Mobile experience) */}
+      {/* Screen Wake Lock Status Bar (Mobile experience) & Version Badge */}
       <div className="w-full max-w-md px-2 mb-2 flex items-center justify-between text-[11px] text-slate-500">
         <span className="flex items-center gap-1">
           <span className={`w-2 h-2 rounded-full ${isLocked ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-          {isLocked ? '화면 켜짐 유지(WakeLock) 활성' : '화면 절전 방지 대기 중'}
+          {isLocked ? '화면 켜짐 유지' : '절전 방지 대기'}
         </span>
-        <PWAInstallButton />
+        <div className="flex items-center gap-2">
+          <VersionBadge compact />
+          <PWAInstallButton />
+        </div>
       </div>
 
       {/* In-Game Central Dynamic Views */}

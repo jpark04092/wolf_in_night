@@ -14,6 +14,7 @@ import { webdav, WebDAVResource } from '../lib/webdav';
 import { RoomInfo } from '../types';
 import { playSound } from '../lib/audio';
 import { PWAInstallButton } from './PWAInstallButton';
+import { VersionBadge } from './VersionBadge';
 
 interface LobbyViewProps {
   onJoinRoom: (roomId: string, displayName: string, isHost: boolean) => void;
@@ -153,11 +154,14 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
       {/* Top Brand Bar */}
       <header className="w-full max-w-md flex items-center justify-between py-3 border-b border-slate-800/80 mb-6">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 to-rose-600 flex items-center justify-center shadow-lg shadow-indigo-900/30">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 to-rose-600 flex items-center justify-center shadow-lg shadow-indigo-900/30 shrink-0">
             <Moon className="w-5 h-5 text-amber-300 fill-amber-300" />
           </div>
           <div>
-            <h1 className="font-black tracking-tight text-base text-white">한밤의 늑대인간</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-black tracking-tight text-base text-white">한밤의 늑대인간</h1>
+              <VersionBadge compact />
+            </div>
             <span className="text-[10px] text-slate-400 font-mono tracking-wider">WebDAV PWA Edition</span>
           </div>
         </div>

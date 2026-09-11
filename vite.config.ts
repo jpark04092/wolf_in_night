@@ -1,12 +1,62 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import fs from 'fs';
+import { execSync } from 'child_process';
 import {defineConfig} from 'vite';
+
+// Read version from package.json
+const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
+const appVersion = pkg.version || '1.1.0';
+
+// Resolve Git Commit Hash
+let commitHash = process.env.VITE_GIT_COMMIT_HASH || process.env.GITHUB_SHA || '';
+if (!commitHash) {
+  try {
+    commitHash = execSync('git rev-parse --short HEAD').toString().trim();
+  } catch {
+    commitHash = 'live';
+  }
+} else if (commitHash.length > 7) {
+  commitHash = commitHash.substring(0, 7);
+}
+
+// Generate KST build time
+const now = new Date();
+const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+const buildTime = `${kstDate.getUTCFullYear()}-${String(kstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kstDate.getUTCDate()).padStart(2, '0')} ${String(kstDate.getUTCHours()).padStart(2, '0')}:${String(kstDate.getUTCMinutes()).padStart(2, '0')} KST`;
+
+// Custom plugin to write version.json into dist
+function versionOutputPlugin() {
+  return {
+    name: 'generate-version-json',
+    closeBundle() {
+      const distDir = path.resolve(__dirname, 'dist');
+      if (fs.existsSync(distDir)) {
+        const versionData = {
+          version: `v${appVersion}`,
+          commit: commitHash,
+          buildTime: buildTime,
+        };
+        fs.writeFileSync(
+          path.join(distDir, 'version.json'),
+          JSON.stringify(versionData, null, 2),
+          'utf-8'
+        );
+      }
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
     base: './',
-    plugins: [react(), tailwindcss()],
+    define: {
+      __APP_VERSION__: JSON.stringify(`v${appVersion}`),
+      __BUILD_TIME__: JSON.stringify(buildTime),
+      __COMMIT_HASH__: JSON.stringify(commitHash),
+    },
+    plugins: [react(), tailwindcss(), versionOutputPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

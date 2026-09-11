@@ -26,12 +26,18 @@ jobs:
         run: npm install
 
       - name: Build Web PWA (Vite)
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          VITE_GIT_COMMIT_HASH: ${{ github.sha }}
         run: npm run build
 
       - name: Deploy dist to release branch
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          cp update.sh dist/update.sh
+          chmod +x dist/update.sh
 
           cd dist
           git init
