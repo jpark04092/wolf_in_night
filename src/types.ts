@@ -33,6 +33,7 @@ export interface UserCardFile {
   isBot?: boolean;
   avatarId?: number;
   lastSeen?: number; // Unix timestamp for presence / heartbeat
+  sessionId?: string; // Tab/Client unique session token
 }
 
 export interface CenterCardsFile {
@@ -51,6 +52,7 @@ export interface PlayerInfo {
   avatarId?: number;
   lastSeen?: number;
   isOnline?: boolean;
+  sessionId?: string;
 }
 
 export interface RoomInfo {

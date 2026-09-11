@@ -70,11 +70,13 @@
   "initialRole": "WEREWOLF",
   "displayName": "홍길동",
   "isBot": false,
-  "lastSeen": 1741678805000
+  "lastSeen": 1741678805000,
+  "sessionId": "sess_x92a1"
 }
 ```
-* **주의**: 강도(Robber)나 말썽쟁이(Troublemaker)에 의해 카드가 맞바뀌더라도 유저 파일명을 MOVE하지 않고, 오직 `role` 필드만 상호 교체하여 갱신(`PUT`)합니다. `initialRole` 및 `displayName`, `lastSeen`은 영구 보존되어 신원 파괴를 원천 차단합니다.
+* **주의**: 강도(Robber)나 말썽쟁이(Troublemaker)에 의해 카드가 맞바뀌더라도 유저 파일명을 MOVE하지 않고, 오직 `role` 필드만 상호 교체하여 갱신(`PUT`)합니다. `initialRole` 및 `displayName`, `lastSeen`, `sessionId`는 영구 보존되어 신원 파괴를 원천 차단합니다.
 * **lastSeen**: 브라우저 탭 활성 상태를 알리는 하트비트 타임스탬프(4초 주기 갱신). 대기실에서 12초 초과 미갱신 시 오프라인으로 판정됩니다.
+* **sessionId**: 브라우저 탭/클라이언트의 고유 세션 토큰으로 동일 ID에 대한 다중 탭/다중 기기 중복 접속 및 충돌을 감지하고 방지합니다.
 
 ### (4) 중앙 카드: `center.json`
 * **경로**: `/rooms/{roomId}/center.json`
@@ -315,14 +317,20 @@ NAS에 이미 Apache가 설치되어 `/var/www`를 사용 중인 경우:
 
 ### (2) 하트비트(Heartbeat) 및 유령 플레이어/중복 참가 방지
 * **하트비트 루프**:
-  - 방에 입장한 모든 클라이언트는 4초 주기로 자신의 `{myId}.json` 파일의 `lastSeen` 타임스탬프(`Date.now()`)를 갱신합니다.
-  - 모바일 기기 화면 복귀(`visibilitychange`) 시에도 즉시 `lastSeen`을 터치합니다.
+  - 방에 입장한 모든 클라이언트는 4초 주기로 자신의 `{myId}.json` 파일의 `lastSeen` 타임스탬프(`Date.now()`) 및 `sessionId`를 갱신합니다.
+  - 모바일 기기 화면 복귀(`visibilitychange`) 시에도 즉시 `lastSeen`과 `sessionId`를 터치합니다.
 * **접속 상태 판정**:
-  - `0.8s` 상태 폴링 시 `Date.now() - uData.lastSeen < 12000` (12초 이내)이면 온라인, 12초 초과 시 '오프라인'으로 판정합니다.
+  - `0.8s` 상태 폴링 시 `Date.now() - uData.lastSeen < 12000` (12초 이내, 테스트 모드는 180초)이면 온라인, 초과 시 '오프라인'으로 판정합니다.
 * **대기실 방장 강퇴(`Kick`) 권한**:
   - 대기실(`WAITING`)에서 12초 이상 하트비트가 끊겨 오프라인이 된 좀비 플레이어가 있을 경우, 방장에게 `[강퇴]` 버튼(`UserX`)이 노출되어 방 파일 목록에서 안전하게 제거할 수 있습니다.
-* **동일 닉네임 유령 세션 자동 정리(Takeover)**:
-  - 대기실 입장 시 동일한 `displayName`을 가진 다른 세션 파일이 존재하고, 해당 파일의 `lastSeen`이 12초 이상 경과한 비활성 상태라면 신규 입장 시 자동으로 이전 잔재 파일을 삭제하여 중복 플레이어 슬롯 차지를 방지합니다.
+* **동일 닉네임(ID) 활성 플레이어 중복 입장 차단**:
+  - 대기실 입장(`handleJoinRoom`) 및 세션 복원(`restoreSession`) 시 대상 방의 활성 플레이어 중 동일한 닉네임(`displayName`, 대소문자 무시 및 공백 제거)이 이미 존재하는 경우, 입장을 원천 차단하고 사용자에게 안내 토스트를 띄운 뒤 로비에 머무르도록 합니다.
+  - 동일한 `displayName`을 가진 세션이 12초 이상 경과한 비활성(stale) 상태라면, 이전 잔재 파일로 판단하여 신규 입장 시 자동으로 삭제(`DELETE`)하고 재입장(Takeover)을 허용합니다.
+* **동일 세션 ID(`myId`) 다중 탭 동시 접속 감지 (`BroadcastChannel`)**:
+  - 탭 복제(Duplicate Tab) 등으로 동일한 `myId`를 가진 브라우저 탭이 추가로 열리는 경우, `BroadcastChannel('onw_tab_sync_{myId}')` 기반의 `PING_SESSION`/`PONG_SESSION` 핸드셰이크를 통해 이미 활성 상태인 탭이 있는지 감지합니다.
+  - 기존 탭이 응답할 경우 신규 탭의 대기실 입장을 즉시 차단하고 로비로 안내합니다. F5 새로고침 시에는 기존 탭이 언로드된 후 복원되므로 차단되지 않고 세션이 안전하게 유지됩니다.
+* **다중 기기 세션 충돌 감지 (`sessionId`)**:
+  - `0.8s` 주기 상태 동기화 중 서버상의 `{myId}.json`에 기록된 `sessionId`가 현재 탭의 세션 토큰과 다를 경우, 다른 기기/창에서 새롭게 접속한 것으로 판단하여 현재 탭을 자동으로 연결 종료하고 사용자에게 안내 토스트를 출력합니다.
 
 ### (3) 방장 퇴장(Leave) 시 권한 위임(Host Handover) 및 빈 방 수명주기
 * **명시적 방장 퇴장 처리 (`handleLeaveRoom`)**:

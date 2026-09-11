@@ -136,6 +136,13 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
     playSound('click');
     setIsLoading(true);
     try {
+      // 0. Check if room already exists
+      const existingState = await webdav.get<{ phase: string }>(`/rooms/${encodeURIComponent(cleanId)}/state.json`);
+      if (existingState) {
+        alert('이미 존재하는 방 코드입니다. 다른 방 이름을 사용해주세요.');
+        return;
+      }
+
       // 1. MKCOL /rooms/room_xxx
       await webdav.mkcol(`/rooms/${cleanId}`);
       // 2. MKCOL /rooms/room_xxx/votes
@@ -225,7 +232,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
         <section className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-sm">
           <label className="text-xs font-semibold text-slate-400 block mb-1.5 flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-indigo-400" />
-            내 닉네임 설정
+            내 닉네임 (플레이어 ID)
           </label>
           <div className="flex gap-2">
             <input
@@ -233,7 +240,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
               value={displayName}
               maxLength={12}
               onChange={(e) => handleSaveNickname(e.target.value)}
-              placeholder="닉네임을 입력하세요"
+              placeholder="닉네임(ID)을 입력하세요"
               className="flex-1 bg-slate-950 border border-slate-700/80 focus:border-indigo-500 rounded-2xl px-3.5 py-2.5 text-sm font-semibold text-white outline-none transition"
             />
           </div>
