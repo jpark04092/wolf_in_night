@@ -31,6 +31,7 @@ export interface UserCardFile {
   displayName: string;
   isBot?: boolean;
   avatarId?: number;
+  lastSeen?: number; // Unix timestamp for presence / heartbeat
 }
 
 export interface CenterCardsFile {
@@ -47,6 +48,8 @@ export interface PlayerInfo {
   hasVoted?: boolean;
   votedTarget?: string;
   avatarId?: number;
+  lastSeen?: number;
+  isOnline?: boolean;
 }
 
 export interface RoomInfo {

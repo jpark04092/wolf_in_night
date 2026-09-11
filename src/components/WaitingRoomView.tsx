@@ -8,6 +8,7 @@ import {
   Play,
   UserPlus,
   UserMinus,
+  UserX,
   Sparkles,
   Shield,
   Layers,
@@ -26,6 +27,7 @@ interface WaitingRoomViewProps {
   onStartGame: (deck: RoleType[], fastMode?: boolean) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
+  onKickPlayer?: (playerId: string) => void;
 }
 
 export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
@@ -36,6 +38,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   onStartGame,
   onAddBot,
   onRemoveBot,
+  onKickPlayer,
 }) => {
   const [fastMode, setFastMode] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -163,17 +166,31 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         <div className="grid grid-cols-2 gap-2.5 overflow-y-auto max-h-56 pr-1">
           {players.map((p) => {
             const isMe = p.id === myId;
+            const isOffline = p.isOnline === false;
+
             return (
               <div
                 key={p.id}
                 className={`p-3 rounded-2xl border flex items-center justify-between transition-all ${
                   isMe
                     ? 'bg-indigo-950/40 border-indigo-500/80 shadow-md'
+                    : isOffline
+                    ? 'bg-slate-950/40 border-amber-900/40 opacity-75'
                     : 'bg-slate-950/80 border-slate-800'
                 }`}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
+                    <span
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        p.isBot
+                          ? 'bg-purple-400'
+                          : isOffline
+                          ? 'bg-amber-400 animate-pulse'
+                          : 'bg-emerald-400'
+                      }`}
+                      title={p.isBot ? '가상 봇' : isOffline ? '통신 끊김 (오프라인)' : '온라인 접속 중'}
+                    />
                     <span className="font-bold text-sm text-slate-100 truncate">
                       {p.displayName}
                     </span>
@@ -183,7 +200,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 mt-0.5">
+                  <div className="flex items-center gap-1.5 mt-0.5">
                     {p.isHost && (
                       <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-0.5">
                         <Shield className="w-3 h-3" />
@@ -193,18 +210,43 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                     {p.isBot && (
                       <span className="text-[10px] text-purple-400 font-mono">가상 플레이어</span>
                     )}
+                    {!p.isBot && isOffline && (
+                      <span className="text-[10px] text-amber-400 font-medium">
+                        오프라인
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {isHost && p.isBot && (
-                  <button
-                    onClick={() => onRemoveBot(p.id)}
-                    className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition ml-2"
-                    title="봇 제거"
-                  >
-                    <UserMinus className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                <div className="flex items-center gap-1 ml-1.5">
+                  {isHost && p.isBot && (
+                    <button
+                      onClick={() => onRemoveBot(p.id)}
+                      className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                      title="봇 제거"
+                    >
+                      <UserMinus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {isHost && !p.isBot && !isMe && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`'${p.displayName}' 플레이어를 대기실에서 내보내시겠습니까?`)) {
+                          onKickPlayer?.(p.id);
+                        }
+                      }}
+                      className={`p-1 rounded-lg transition ${
+                        isOffline
+                          ? 'text-amber-400 hover:text-rose-400 hover:bg-rose-950/40'
+                          : 'text-slate-600 hover:text-rose-400 hover:bg-rose-950/40'
+                      }`}
+                      title={isOffline ? '오프라인 유저 내보내기' : '플레이어 내보내기'}
+                    >
+                      <UserX className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}

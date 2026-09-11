@@ -68,10 +68,12 @@
   "role": "WEREWOLF",
   "initialRole": "WEREWOLF",
   "displayName": "홍길동",
-  "isBot": false
+  "isBot": false,
+  "lastSeen": 1741678805000
 }
 ```
 * **주의**: 강도(Robber)나 말썽쟁이(Troublemaker)에 의해 카드가 맞바뀌면 파일 내용이 갱신되거나 파일명이 `MOVE` 됩니다.
+* **lastSeen**: 브라우저 탭 활성 상태를 알리는 하트비트 타임스탬프(4초 주기 갱신). 대기실에서 12초 초과 미갱신 시 오프라인으로 판정됩니다.
 
 ### (4) 중앙 카드: `center.json`
 * **경로**: `/rooms/{roomId}/center.json`
@@ -281,4 +283,30 @@ NAS에 이미 Apache가 설치되어 `/var/www`를 사용 중인 경우:
    - 빌드 시 `version.json`이 자동 생성되어 `version`, `commit`, `buildTime(KST)`이 기록되며, 프론트엔드 코드 번들에도 전역 주입됩니다.
    - 로비 및 인게임 화면 최상단에 `VersionBadge`(`v1.1.0 · #commit`)가 상시 표시되어 최신 배포 여부를 즉시 확인할 수 있습니다.
    - 서버 터미널에서도 `cat /var/www/werewolf/dist/version.json`으로 배포 상태를 바로 확인할 수 있습니다.
+
+---
+
+## 8. 브라우저 새로고침 대응 및 세션 복원 / Presence 프로토콜
+
+### (1) 브라우저 새로고침(F5) 시 세션 보존 메커니즘
+* **세션 식별자**: `sessionStorage`에 `onw_room_id`, `onw_my_id`를 보관하고, 브라우저 주소창을 `/?room={roomId}`로 실시간 동기화(`window.history.replaceState`).
+* **세션 복원 (`restoreSession`)**:
+  - 앱 마운트 시 `sessionStorage` 또는 URL 파라미터에서 `roomId`를 감지하면 즉시 복원 시퀀스를 실행합니다.
+  - `/rooms/{roomId}/state.json`과 `/rooms/{roomId}/{myId}.json`을 확인합니다.
+  - **직업 보존**: 기존 유저 카드가 존재할 경우 기존 배정된 직업(`role`, `initialRole`)을 그대로 보존하며, 절대 `VILLAGER`로 덮어쓰지 않습니다.
+  - **투표 복원**: `VOTING` 단계일 경우 `/rooms/{roomId}/votes/{myId}.txt`를 읽어 투표 대상 선택 상태를 복구합니다.
+  - **비정상 접근 차단**: 유저 카드가 없는데 이미 게임이 진행 중(`phase !== 'WAITING'`)인 경우, 난입이 불가능하므로 안전하게 세션을 지우고 로비로 회귀시킵니다.
+* **명시적 퇴장 분리**:
+  - 오직 상단 헤더의 `[방 나가기]` 버튼을 사용자가 직접 클릭했을 때만 서버 파일 삭제 및 `sessionStorage.removeItem('onw_room_id')`가 실행됩니다.
+
+### (2) 하트비트(Heartbeat) 및 유령 플레이어/중복 참가 방지
+* **하트비트 루프**:
+  - 방에 입장한 모든 클라이언트는 4초 주기로 자신의 `{myId}.json` 파일의 `lastSeen` 타임스탬프(`Date.now()`)를 갱신합니다.
+  - 모바일 기기 화면 복귀(`visibilitychange`) 시에도 즉시 `lastSeen`을 터치합니다.
+* **접속 상태 판정**:
+  - `0.8s` 상태 폴링 시 `Date.now() - uData.lastSeen < 12000` (12초 이내)이면 온라인, 12초 초과 시 '오프라인'으로 판정합니다.
+* **대기실 방장 강퇴(`Kick`) 권한**:
+  - 대기실(`WAITING`)에서 12초 이상 하트비트가 끊겨 오프라인이 된 좀비 플레이어가 있을 경우, 방장에게 `[강퇴]` 버튼(`UserX`)이 노출되어 방 파일 목록에서 안전하게 제거할 수 있습니다.
+* **동일 닉네임 유령 세션 자동 정리(Takeover)**:
+  - 대기실 입장 시 동일한 `displayName`을 가진 다른 세션 파일이 존재하고, 해당 파일의 `lastSeen`이 12초 이상 경과한 비활성 상태라면 신규 입장 시 자동으로 이전 잔재 파일을 삭제하여 중복 플레이어 슬롯 차지를 방지합니다.
 

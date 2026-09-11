@@ -37,7 +37,26 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { VersionBadge } from './components/VersionBadge';
 
 export default function App() {
-  const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      const sessionRoom = sessionStorage.getItem('onw_room_id');
+      return sessionRoom || roomParam || null;
+    }
+    return null;
+  });
+
+  const [isRestoring, setIsRestoring] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      const sessionRoom = sessionStorage.getItem('onw_room_id');
+      return Boolean(sessionRoom || roomParam);
+    }
+    return false;
+  });
+
   const [myId, setMyId] = useState<string>(() => {
     // Prefer sessionStorage so each browser tab gets a unique identity for local testing / multi-tab sessions
     let saved = sessionStorage.getItem('onw_my_id');
@@ -106,14 +125,144 @@ export default function App() {
     }
   }, [roomId, roomState.phase, requestLock]);
 
+  // Re-acquire lock and touch heartbeat on mobile visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && roomId) {
+        if (roomState.phase !== 'WAITING') {
+          requestLock();
+        }
+        webdav.get<UserCardFile>(`/rooms/${roomId}/${myId}.json`).then((file) => {
+          if (file) {
+            webdav.put(`/rooms/${roomId}/${myId}.json`, { ...file, lastSeen: Date.now() }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [roomId, myId, roomState.phase, requestLock]);
+
+  // Session Restoration Effect on initial mount / reload
+  useEffect(() => {
+    const targetRoom = roomId;
+    if (!targetRoom) {
+      setIsRestoring(false);
+      return;
+    }
+
+    let isMounted = true;
+    async function restoreSession() {
+      try {
+        console.log(`[Session Restore] Checking room: ${targetRoom}, user: ${myId}`);
+        // 1. Verify if room state exists
+        const state = await webdav.get<RoomState>(`/rooms/${targetRoom}/state.json`);
+        if (!state) {
+          console.warn(`[Session Restore] Room ${targetRoom} does not exist. Returning to lobby.`);
+          sessionStorage.removeItem('onw_room_id');
+          if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+          if (isMounted) {
+            setRoomId(null);
+            setIsRestoring(false);
+          }
+          return;
+        }
+
+        // 2. Check if user's file exists
+        const existingUser = await webdav.get<UserCardFile>(`/rooms/${targetRoom}/${myId}.json`);
+        if (existingUser) {
+          console.log(`[Session Restore] Found existing user card:`, existingUser);
+          if (isMounted) {
+            setRoomState(state);
+            setIsHost(state.hostId === myId);
+            setMyRole(existingUser.role);
+            if (existingUser.initialRole) {
+              setMyInitialRole(existingUser.initialRole);
+            }
+            if (existingUser.displayName) {
+              setDisplayName(existingUser.displayName);
+            }
+          }
+          // Touch heartbeat
+          await webdav.put(`/rooms/${targetRoom}/${myId}.json`, {
+            ...existingUser,
+            lastSeen: Date.now(),
+          });
+        } else {
+          // If no existing user file
+          if (state.phase === 'WAITING') {
+            console.log(`[Session Restore] Registering new user into waiting room: ${targetRoom}`);
+            const newFile: UserCardFile = {
+              role: 'VILLAGER',
+              displayName: displayName,
+              isBot: false,
+              lastSeen: Date.now(),
+            };
+            await webdav.put(`/rooms/${targetRoom}/${myId}.json`, newFile);
+            if (isMounted) {
+              setRoomState(state);
+              setIsHost(state.hostId === myId);
+            }
+          } else {
+            console.warn(`[Session Restore] Game already in progress (${state.phase}). Cannot join mid-game.`);
+            sessionStorage.removeItem('onw_room_id');
+            if (typeof window !== 'undefined') {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+            if (isMounted) {
+              setRoomId(null);
+              setIsRestoring(false);
+            }
+            return;
+          }
+        }
+
+        // 3. Restore vote if in VOTING phase
+        if (state.phase === 'VOTING') {
+          try {
+            const vote = await webdav.get<string>(`/rooms/${targetRoom}/votes/${myId}.txt`);
+            if (vote && isMounted) {
+              setVotedTarget(vote.trim());
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        // 4. Update session storage and URL
+        sessionStorage.setItem('onw_room_id', targetRoom);
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', `/?room=${encodeURIComponent(targetRoom)}`);
+        }
+      } catch (err) {
+        console.error('[Session Restore] Error during restore:', err);
+      } finally {
+        if (isMounted) {
+          setIsRestoring(false);
+        }
+      }
+    }
+
+    restoreSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Run once on mount
+
   // Join or Create Room Handler
   const handleJoinRoom = async (targetRoomId: string, userDisplayName: string, hostFlag: boolean) => {
     setRoomId(targetRoomId);
     setDisplayName(userDisplayName);
     setIsHost(hostFlag);
 
-    // Save to localStorage
+    // Save to storage
     localStorage.setItem('onw_nickname', userDisplayName);
+    sessionStorage.setItem('onw_room_id', targetRoomId);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `/?room=${encodeURIComponent(targetRoomId)}`);
+    }
 
     try {
       // 1. Ensure directory /rooms, /rooms/{roomId} and /rooms/{roomId}/votes
@@ -121,13 +270,46 @@ export default function App() {
       await webdav.mkcol(`/rooms/${targetRoomId}`);
       await webdav.mkcol(`/rooms/${targetRoomId}/votes`);
 
-      // 2. Register user file: PUT /rooms/{roomId}/{myId}.json
-      const userFile: UserCardFile = {
-        role: 'VILLAGER',
-        displayName: userDisplayName,
-        isBot: false,
-      };
-      await webdav.put(`/rooms/${targetRoomId}/${myId}.json`, userFile);
+      // 2. Check if user already has a card (preserve role and initialRole!)
+      const existingUser = await webdav.get<UserCardFile>(`/rooms/${targetRoomId}/${myId}.json`);
+      if (existingUser) {
+        const updated: UserCardFile = {
+          ...existingUser,
+          displayName: userDisplayName,
+          lastSeen: Date.now(),
+        };
+        await webdav.put(`/rooms/${targetRoomId}/${myId}.json`, updated);
+        setMyRole(existingUser.role);
+        if (existingUser.initialRole) {
+          setMyInitialRole(existingUser.initialRole);
+        }
+      } else {
+        // Clean up stale offline duplicate with same nickname in WAITING room
+        try {
+          const roomFiles = await webdav.propfind(`/rooms/${targetRoomId}/`, '1');
+          for (const rf of roomFiles) {
+            if (!rf.isDir && rf.name.startsWith('user_') && rf.name.endsWith('.json') && rf.name !== `${myId}.json`) {
+              const otherUser = await webdav.get<UserCardFile>(`/rooms/${targetRoomId}/${rf.name}`);
+              if (otherUser && !otherUser.isBot && otherUser.displayName === userDisplayName) {
+                if (!otherUser.lastSeen || Date.now() - otherUser.lastSeen > 12000) {
+                  console.log(`[Join] Cleaning up stale duplicate player session ${rf.name} (${userDisplayName})`);
+                  await webdav.delete(`/rooms/${targetRoomId}/${rf.name}`).catch(() => {});
+                }
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        const userFile: UserCardFile = {
+          role: 'VILLAGER',
+          displayName: userDisplayName,
+          isBot: false,
+          lastSeen: Date.now(),
+        };
+        await webdav.put(`/rooms/${targetRoomId}/${myId}.json`, userFile);
+      }
 
       // 3. If host, ensure state.json exists
       const existingState = await webdav.get<RoomState>(`/rooms/${targetRoomId}/state.json`);
@@ -152,7 +334,7 @@ export default function App() {
     }
   };
 
-  // Leave room
+  // Leave room (User explicitly clicked Leave button)
   const handleLeaveRoom = async () => {
     if (roomId) {
       try {
@@ -160,6 +342,10 @@ export default function App() {
       } catch (e) {
         // ignore
       }
+    }
+    sessionStorage.removeItem('onw_room_id');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', window.location.pathname);
     }
     setRoomId(null);
     setRoomState({
@@ -172,7 +358,40 @@ export default function App() {
     setMyRole(null);
     setMyInitialRole(null);
     setVotedTarget(null);
+    setPlayers([]);
   };
+
+  // Host can kick a disconnected / zombie player in WAITING room
+  const handleKickPlayer = async (targetPlayerId: string) => {
+    if (!roomId || !isHost || targetPlayerId === myId) return;
+    try {
+      console.log(`[Host] Kicking player ${targetPlayerId}...`);
+      await webdav.delete(`/rooms/${roomId}/${targetPlayerId}.json`);
+      setPlayers((prev) => prev.filter((p) => p.id !== targetPlayerId));
+    } catch (err) {
+      console.warn('Failed to kick player:', err);
+    }
+  };
+
+  // Periodic Heartbeat loop: update lastSeen every 4 seconds when in room
+  useEffect(() => {
+    if (!roomId) return;
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        const currentFile = await webdav.get<UserCardFile>(`/rooms/${roomId}/${myId}.json`);
+        if (currentFile) {
+          await webdav.put(`/rooms/${roomId}/${myId}.json`, {
+            ...currentFile,
+            lastSeen: Date.now(),
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }, 4000);
+
+    return () => clearInterval(heartbeatInterval);
+  }, [roomId, myId]);
 
   // Synchronize Room State & Players via WebDAV polling (0.8s interval)
   useEffect(() => {
@@ -197,10 +416,14 @@ export default function App() {
         );
 
         const loadedPlayers: PlayerInfo[] = [];
+        const now = Date.now();
         for (const uf of userFiles) {
           const uId = uf.name.replace(/\.json$/, '');
           const uData = await webdav.get<UserCardFile>(`/rooms/${roomId}/${uf.name}`);
           if (uData) {
+            // Check online presence (within last 12 seconds)
+            const isOnline = uData.isBot || (uData.lastSeen ? now - uData.lastSeen < 12000 : true);
+
             loadedPlayers.push({
               id: uId,
               displayName: uData.displayName,
@@ -208,6 +431,8 @@ export default function App() {
               isBot: uData.isBot,
               role: uData.role,
               initialRole: uData.initialRole,
+              lastSeen: uData.lastSeen,
+              isOnline,
             });
 
             if (uId === myId) {
@@ -228,6 +453,14 @@ export default function App() {
           const cData = await webdav.get<CenterCardsFile>(`/rooms/${roomId}/center.json`);
           if (cData && isMounted) {
             setCenterCards(cData.cards);
+          }
+        }
+
+        // 4. If in VOTING phase, restore user's votedTarget if not set
+        if (state?.phase === 'VOTING') {
+          const vote = await webdav.get<string>(`/rooms/${roomId}/votes/${myId}.txt`);
+          if (vote && isMounted) {
+            setVotedTarget(vote.trim());
           }
         }
       } catch (err) {
@@ -547,6 +780,19 @@ export default function App() {
     roomState.currentStep !== null &&
     myInitialRole === roomState.currentStep;
 
+  // Render Loading spinner during session restoration
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center animate-spin mb-4">
+          <Moon className="w-6 h-6 text-indigo-400" />
+        </div>
+        <p className="text-slate-200 font-bold text-base">게임 세션 복원 중...</p>
+        <p className="text-slate-400 text-xs mt-1">방 정보를 확인하고 연결 중입니다</p>
+      </div>
+    );
+  }
+
   // Render Lobby if not in a room
   if (!roomId) {
     return (
@@ -649,6 +895,7 @@ export default function App() {
             onStartGame={handleStartGame}
             onAddBot={handleAddBot}
             onRemoveBot={handleRemoveBot}
+            onKickPlayer={handleKickPlayer}
           />
         )}
 

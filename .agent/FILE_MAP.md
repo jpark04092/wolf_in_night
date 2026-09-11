@@ -94,6 +94,23 @@ export interface UserCardFile {
   initialRole?: RoleType;
   displayName: string;
   isBot?: boolean;
+  avatarId?: number;
+  lastSeen?: number; // 4초 주기 하트비트 타임스탬프
+}
+
+// 참여 플레이어 런타임 정보
+export interface PlayerInfo {
+  id: string;
+  displayName: string;
+  isHost: boolean;
+  isBot?: boolean;
+  role?: RoleType;
+  initialRole?: RoleType;
+  hasVoted?: boolean;
+  votedTarget?: string;
+  avatarId?: number;
+  lastSeen?: number;
+  isOnline?: boolean;
 }
 
 // 중앙 카드 파일 (center.json)
