@@ -35,8 +35,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
   const fetchRooms = useCallback(async (isSilent = false) => {
     if (!isSilent) setIsLoading(true);
     try {
-      // Ensure /rooms directory exists
-      await webdav.mkcol('/rooms');
       const resources: WebDAVResource[] = await webdav.listRooms();
 
       const validRooms = resources.filter(
@@ -73,9 +71,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
         }
 
         try {
-          const roomFiles = await webdav.propfind(`/rooms/${encodeURIComponent(rId)}`, '1');
+          const roomFiles = await webdav.propfind(`/rooms/${encodeURIComponent(rId)}/`, '1');
           playerCount = roomFiles.filter(
-            (f) => f.name.startsWith('user_') && f.name.endsWith('.json')
+            (f) => !f.isDir && f.name.startsWith('user_') && f.name.endsWith('.json')
           ).length;
         } catch {
           // ignore

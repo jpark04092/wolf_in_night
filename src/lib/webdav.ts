@@ -20,10 +20,70 @@ export interface WebDAVResource {
   hostId?: string;
 }
 
-// In-memory virtual WebDAV fallback cache to guarantee 100% resilience
+// Multi-tab synchronized virtual WebDAV fallback cache to guarantee 100% resilience
+const VFS_STORAGE_KEY = 'onw_virtual_fs_v2';
 const virtualFS = new Map<string, { content: string; isDir: boolean }>();
 
-function normalizePath(path: string): string {
+// Initialize VFS from localStorage if available
+try {
+  const savedVFS = localStorage.getItem(VFS_STORAGE_KEY);
+  if (savedVFS) {
+    const parsed = JSON.parse(savedVFS);
+    for (const [k, v] of Object.entries(parsed)) {
+      virtualFS.set(k, v as { content: string; isDir: boolean });
+    }
+  }
+} catch {
+  // ignore storage error
+}
+
+// BroadcastChannel to synchronize virtualFS across all browser tabs in real-time
+let vfsChannel: BroadcastChannel | null = null;
+try {
+  if (typeof BroadcastChannel !== 'undefined') {
+    vfsChannel = new BroadcastChannel('onw_virtual_fs_sync');
+    vfsChannel.onmessage = (event) => {
+      if (event.data && event.data.type === 'VFS_UPDATE') {
+        const { key, val, isDelete } = event.data;
+        if (isDelete) {
+          virtualFS.delete(key);
+        } else if (val) {
+          virtualFS.set(key, val);
+        }
+      }
+    };
+  }
+} catch {
+  // BroadcastChannel not available in environment
+}
+
+function persistVFS(key: string, val?: { content: string; isDir: boolean }, isDelete = false) {
+  if (isDelete) {
+    virtualFS.delete(key);
+  } else if (val) {
+    virtualFS.set(key, val);
+  }
+
+  try {
+    const obj: Record<string, { content: string; isDir: boolean }> = {};
+    for (const [k, v] of virtualFS.entries()) {
+      obj[k] = v;
+    }
+    localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(obj));
+  } catch {
+    // quota exceeded or restricted
+  }
+
+  if (vfsChannel) {
+    try {
+      vfsChannel.postMessage({ type: 'VFS_UPDATE', key, val, isDelete });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function normalizePath(path: string): string {
   let p = path.trim();
   if (!p.startsWith('/')) p = '/' + p;
   // ensure /webdav prefix
@@ -64,16 +124,18 @@ export class WebDAVClient {
       });
       return res;
     } catch (err) {
-      console.warn(`[WebDAV] HTTP network error on ${method} ${url}:`, err);
-      // Fallback to virtual FS emulator on fetch failure
+      console.warn(`[WebDAV] Network/fetch issue on ${method} ${url}, using synchronized fallback:`, err);
+      // Fallback to synchronized virtual FS emulator on fetch failure
       return this.handleVirtualFallback(method, path, body, reqHeaders);
     }
   }
 
   /**
-   * Fast rooms query with fallback to PROPFIND
+   * Fast rooms query with fallback to PROPFIND.
+   * Fully compatible with both Express custom server and standard Apache/Nginx WebDAV.
    */
   async listRooms(): Promise<WebDAVResource[]> {
+    // 1. Try custom high-speed JSON API first (if available)
     try {
       const res = await fetch(`${this.baseUrl}/api/rooms`, {
         cache: 'no-store',
@@ -81,28 +143,126 @@ export class WebDAVClient {
         headers: {
           'Cache-Control': 'no-cache',
           Pragma: 'no-cache',
+          Accept: 'application/json',
         },
       });
-      if (res.ok) {
+
+      const contentType = res.headers.get('content-type') || '';
+      // Ensure the response is valid JSON, not an HTML SPA fallback (Apache returns index.html on missing endpoints)
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          return data.map((r: { id: string; playerCount?: number; phase?: string; hostId?: string }) => ({
+          return data.map((r: { id: string; name?: string; playerCount?: number; phase?: string; hostId?: string }) => ({
             href: `/webdav/rooms/${encodeURIComponent(r.id)}/`,
             name: r.id,
             isDir: true,
-            playerCount: r.playerCount,
-            phase: r.phase,
-            hostId: r.hostId,
+            playerCount: r.playerCount ?? 0,
+            phase: r.phase || 'WAITING',
+            hostId: r.hostId || '',
           }));
         }
       }
     } catch (e) {
-      // ignore and fallback
+      // JSON endpoint not available or returned non-JSON, gracefully fall back
     }
-    return this.propfind('/rooms', '1');
+
+    // 2. Standard WebDAV PROPFIND /rooms/ (with trailing slash for RFC 4918 compatibility)
+    try {
+      const resources = await this.propfind('/rooms/', '1');
+      const validRoomDirs = resources.filter(
+        (r) => r.isDir && r.name && r.name !== 'rooms' && !r.name.startsWith('.')
+      );
+
+      // Inspect state.json and user files for each room to extract details
+      const detailedRooms = await Promise.all(
+        validRoomDirs.map(async (r) => {
+          let phase = 'WAITING';
+          let hostId = '';
+          let playerCount = 0;
+
+          try {
+            const state = await this.get<{ phase: string; hostId: string }>(
+              `/rooms/${encodeURIComponent(r.name)}/state.json`
+            );
+            if (state) {
+              phase = state.phase || 'WAITING';
+              hostId = state.hostId || '';
+            }
+          } catch {
+            // ignore
+          }
+
+          try {
+            const roomFiles = await this.propfind(`/rooms/${encodeURIComponent(r.name)}/`, '1');
+            playerCount = roomFiles.filter(
+              (f) => !f.isDir && f.name.startsWith('user_') && f.name.endsWith('.json')
+            ).length;
+          } catch {
+            // ignore
+          }
+
+          return {
+            href: r.href,
+            name: r.name,
+            isDir: true,
+            playerCount,
+            phase,
+            hostId,
+          };
+        })
+      );
+
+      if (detailedRooms.length > 0) {
+        return detailedRooms;
+      }
+    } catch (e) {
+      console.warn('[WebDAV] PROPFIND fallback error:', e);
+    }
+
+    // 3. Inspect VirtualFS entries if in offline/isolated fallback mode
+    const vfsRooms: WebDAVResource[] = [];
+    const roomsPrefix = '/webdav/rooms/';
+    for (const [key, val] of virtualFS.entries()) {
+      if (val.isDir && key.startsWith(roomsPrefix) && key !== roomsPrefix) {
+        const sub = key.slice(roomsPrefix.length).replace(/\/$/, '');
+        const segs = sub.split('/');
+        if (segs.length === 1 && segs[0] && !segs[0].startsWith('.')) {
+          const roomId = segs[0];
+          // Get state and players from virtualFS
+          const stateItem = virtualFS.get(`/webdav/rooms/${roomId}/state.json`);
+          let phase = 'WAITING';
+          let hostId = '';
+          if (stateItem) {
+            try {
+              const state = JSON.parse(stateItem.content);
+              phase = state.phase || 'WAITING';
+              hostId = state.hostId || '';
+            } catch {
+              // ignore
+            }
+          }
+          let playerCount = 0;
+          for (const [fKey] of virtualFS.entries()) {
+            if (fKey.startsWith(`/webdav/rooms/${roomId}/user_`) && fKey.endsWith('.json')) {
+              playerCount++;
+            }
+          }
+          vfsRooms.push({
+            href: `/webdav/rooms/${roomId}/`,
+            name: roomId,
+            isDir: true,
+            playerCount,
+            phase,
+            hostId,
+          });
+        }
+      }
+    }
+
+    return vfsRooms;
   }
 
-  // Virtual fallback for seamless standalone/offline demo
+  // Synchronized multi-tab Virtual fallback for seamless standalone/offline resilience
   private handleVirtualFallback(
     method: string,
     rawPath: string,
@@ -112,12 +272,13 @@ export class WebDAVClient {
     const norm = normalizePath(rawPath);
 
     if (method === 'MKCOL') {
-      virtualFS.set(norm.replace(/\/$/, '') + '/', { content: '', isDir: true });
+      const dirKey = norm.endsWith('/') ? norm : `${norm}/`;
+      persistVFS(dirKey, { content: '', isDir: true });
       return new Response('Created in Virtual FS', { status: 201 });
     }
 
     if (method === 'PUT') {
-      virtualFS.set(norm, { content: body || '', isDir: false });
+      persistVFS(norm, { content: body || '', isDir: false });
       return new Response('Stored in Virtual FS', { status: 201 });
     }
 
@@ -140,13 +301,20 @@ export class WebDAVClient {
       const destNorm = normalizePath(dest);
       const item = virtualFS.get(norm);
       if (!item) return new Response('Source not found in Virtual FS', { status: 404 });
-      virtualFS.set(destNorm, item);
-      virtualFS.delete(norm);
+      persistVFS(destNorm, item);
+      persistVFS(norm, undefined, true);
       return new Response('Moved in Virtual FS', { status: 201 });
     }
 
     if (method === 'DELETE') {
-      virtualFS.delete(norm);
+      persistVFS(norm, undefined, true);
+      // Also delete children if directory
+      const dirPrefix = norm.endsWith('/') ? norm : `${norm}/`;
+      for (const [k] of virtualFS.entries()) {
+        if (k.startsWith(dirPrefix)) {
+          persistVFS(k, undefined, true);
+        }
+      }
       return new Response('Deleted', { status: 204 });
     }
 
@@ -185,7 +353,7 @@ export class WebDAVClient {
    */
   async mkcol(path: string): Promise<boolean> {
     const res = await this.request('MKCOL', path);
-    return res.status === 201 || res.status === 405; // 405 means already exists
+    return res.status === 201 || res.status === 405 || res.status === 200; // 405 means already exists
   }
 
   /**
@@ -240,7 +408,9 @@ export class WebDAVClient {
    * PROPFIND: List resources in collection
    */
   async propfind(path: string, depth: '0' | '1' = '1'): Promise<WebDAVResource[]> {
-    const res = await this.request('PROPFIND', path, null, {
+    // Ensure directory path has trailing slash for collection listing compliance
+    const cleanPath = path.endsWith('/') || path.endsWith('.json') || path.endsWith('.txt') ? path : `${path}/`;
+    const res = await this.request('PROPFIND', cleanPath, null, {
       Depth: depth,
       Accept: 'application/json, application/xml, text/xml, */*',
     });
@@ -269,6 +439,14 @@ export class WebDAVClient {
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(xmlText, 'application/xml');
+
+      // Check for parsing error
+      if (doc.getElementsByTagName('parsererror').length > 0) {
+        console.warn('[WebDAV] XML parsererror detected in response');
+        return [];
+      }
+
+      // Query responses across various XML namespaces
       const responses = doc.getElementsByTagNameNS('*', 'response');
 
       for (let i = 0; i < responses.length; i++) {
@@ -276,9 +454,18 @@ export class WebDAVClient {
         const hrefElem = resp.getElementsByTagNameNS('*', 'href')[0];
         if (!hrefElem) continue;
 
-        const href = hrefElem.textContent || '';
+        let href = hrefElem.textContent?.trim() || '';
+        // If href contains full URL (e.g. http://host:port/webdav/...), strip host
+        try {
+          if (href.startsWith('http://') || href.startsWith('https://')) {
+            href = new URL(href).pathname;
+          }
+        } catch {
+          // ignore
+        }
+
         const nameElem = resp.getElementsByTagNameNS('*', 'displayname')[0];
-        let name = nameElem ? nameElem.textContent || '' : '';
+        let name = nameElem ? nameElem.textContent?.trim() || '' : '';
         if (!name) {
           const parts = href.split('/').filter(Boolean);
           name = parts[parts.length - 1] || '';
@@ -290,7 +477,8 @@ export class WebDAVClient {
         }
 
         const resTypeElem = resp.getElementsByTagNameNS('*', 'resourcetype')[0];
-        const isDir = resTypeElem ? resTypeElem.getElementsByTagNameNS('*', 'collection').length > 0 : href.endsWith('/');
+        const hasCollectionTag = resTypeElem ? resTypeElem.getElementsByTagNameNS('*', 'collection').length > 0 : false;
+        const isDir = hasCollectionTag || href.endsWith('/');
 
         const lenElem = resp.getElementsByTagNameNS('*', 'getcontentlength')[0];
         const size = lenElem ? parseInt(lenElem.textContent || '0', 10) : 0;

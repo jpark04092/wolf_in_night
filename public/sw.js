@@ -30,8 +30,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Do not cache WebDAV API calls
-  if (event.request.url.includes('/webdav/')) {
+  // Do not cache WebDAV and API calls (realtime state synchronization)
+  if (event.request.url.includes('/webdav/') || event.request.url.includes('/api/')) {
     return;
   }
   event.respondWith(

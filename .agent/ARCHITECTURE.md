@@ -101,8 +101,11 @@
 
 > **네트워크 & 동기화 안정성 보장 조치**:
 > * **CORS 프리플라이트 완벽 지원**: `Accept`, `Depth`, `Destination`, `Cache-Control`, `Pragma`, `Authorization` 등 커스텀 WebDAV 헤더 사전 승인.
-> * **캐시 무효화**: 모든 WebDAV 및 API 응답에 `Cache-Control: no-cache, no-store, must-revalidate, max-age=0`을 명시하여 브라우저/프록시 304 또는 빈 상태 캐싱 차단.
-> * **로비 2초 자동 폴링**: 로비 진입 후 2초 간격으로 `listRooms()`를 호출하여 다른 기기에서 생성된 방을 새로고침 없이 실시간 갱신.
+> * **캐시 무효화 및 PWA 바이패스**: 모든 WebDAV 및 API(`/api/*`, `/webdav/*`) 요청은 Service Worker 캐시를 바이패스하여 브라우저/프록시 304 또는 빈 상태 캐싱을 원천 차단.
+> * **RFC 4918 디렉터리 표준 준수**: WebDAV 컬렉션 조회(`PROPFIND`, `MKCOL`) 시 trailing slash(`/rooms/`, `/rooms/{id}/`)를 강제 보장하여 웹서버(Apache/Nginx)의 301 Moved Permanently 리다이렉트 실패 방지.
+> * **로비 2초 자동 폴링**: 로비 진입 후 2초 간격으로 `listRooms()`를 호출하여 다른 기기에서 생성된 방을 새로고침 없이 실시간 갱신 (불필요한 반복 `mkcol` 호출 제거).
+> * **멀티 탭 세션 분리 (`sessionStorage`)**: 동일 기기/브라우저에서 탭을 여러 개 열어 테스트할 때 `sessionStorage`를 우선 사용하여 각 탭마다 고유한 `myId`를 부여, 플레이어 충돌 및 데이터 덮어쓰기 방지.
+> * **Multi-Tab BroadcastChannel VirtualFS 동기화**: 일시적 네트워크 순단이나 가상 폴백 모드에서도 `BroadcastChannel`과 `localStorage`를 통해 브라우저의 다른 탭들과 방 목록 및 상태를 실시간 상호 동기화.
 > * **한글/특수문자 방 코드 디코딩**: URL 디코딩(`decodeURIComponent`) 처리로 다국어 방 이름 완벽 호환.
 > * **초대 링크 & 직접 코드 입력**: `?room={roomId}` 쿼리 파라미터 감지 시 1클릭 입장 배너 및 로비 내 직접 코드 입력창 제공.
 

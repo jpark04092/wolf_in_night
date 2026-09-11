@@ -37,10 +37,12 @@ import { VersionBadge } from './components/VersionBadge';
 export default function App() {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [myId, setMyId] = useState<string>(() => {
-    let saved = localStorage.getItem('onw_my_id');
+    // Prefer sessionStorage so each browser tab gets a unique identity for local testing / multi-tab sessions
+    let saved = sessionStorage.getItem('onw_my_id');
     if (!saved) {
+      // If none in session, generate unique ID for this tab
       saved = `user_${Math.random().toString(36).substring(2, 7)}`;
-      localStorage.setItem('onw_my_id', saved);
+      sessionStorage.setItem('onw_my_id', saved);
     }
     return saved;
   });
@@ -97,7 +99,8 @@ export default function App() {
     localStorage.setItem('onw_nickname', userDisplayName);
 
     try {
-      // 1. Ensure directory /rooms/{roomId} and /rooms/{roomId}/votes
+      // 1. Ensure directory /rooms, /rooms/{roomId} and /rooms/{roomId}/votes
+      await webdav.mkcol('/rooms');
       await webdav.mkcol(`/rooms/${targetRoomId}`);
       await webdav.mkcol(`/rooms/${targetRoomId}/votes`);
 
@@ -171,7 +174,7 @@ export default function App() {
         }
 
         // 2. Fetch all user_*.json files
-        const resources: WebDAVResource[] = await webdav.propfind(`/rooms/${roomId}`, '1');
+        const resources: WebDAVResource[] = await webdav.propfind(`/rooms/${roomId}/`, '1');
         const userFiles = resources.filter(
           (r) => !r.isDir && r.name.startsWith('user_') && r.name.endsWith('.json')
         );
