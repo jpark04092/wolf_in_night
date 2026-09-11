@@ -12,6 +12,7 @@ import {
   Shield,
   Layers,
   HelpCircle,
+  Zap,
 } from 'lucide-react';
 import { PlayerInfo, RoleType } from '../types';
 import { ROLES, generateDefaultDeck } from '../lib/roles';
@@ -22,7 +23,7 @@ interface WaitingRoomViewProps {
   myId: string;
   isHost: boolean;
   players: PlayerInfo[];
-  onStartGame: (deck: RoleType[]) => void;
+  onStartGame: (deck: RoleType[], fastMode?: boolean) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
 }
@@ -36,6 +37,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   onAddBot,
   onRemoveBot,
 }) => {
+  const [fastMode, setFastMode] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [showQrModal, setShowQrModal] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -236,6 +238,39 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
         </div>
       </div>
 
+      {/* Host Option: Fast Mode Toggle */}
+      {isHost && (
+        <div className="w-full bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`p-1.5 rounded-xl ${fastMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}`}>
+              <Zap className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-200">빠른 진행 모드 (Fast Mode)</div>
+              <div className="text-[10px] text-slate-400">
+                {fastMode ? '플레이어 없는 직업을 0.8초만에 즉시 통과 (테스트용)' : '블러핑 은폐를 위해 3.5초 가상 턴 유지 (권장)'}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              playSound('click');
+              setFastMode((v) => !v);
+            }}
+            className={`w-11 h-6 rounded-full transition-colors relative flex items-center px-0.5 ${
+              fastMode ? 'bg-amber-500' : 'bg-slate-700'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                fastMode ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      )}
+
       {/* Host Start Game Button */}
       <div className="w-full pt-1">
         {isHost ? (
@@ -244,7 +279,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
             disabled={!canStart}
             onClick={() => {
               playSound('howl');
-              onStartGame(previewDeck);
+              onStartGame(previewDeck, fastMode);
             }}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-base shadow-xl shadow-indigo-950/60 transition active:scale-98 flex items-center justify-center gap-2"
           >

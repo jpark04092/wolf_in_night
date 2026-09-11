@@ -85,6 +85,7 @@ export interface RoomState {
   timerStartedAt?: number;
   hostId: string;
   killed: string[] | string | null;
+  fastMode?: boolean;
 }
 
 // 유저 카드 파일 ({userId}.json)

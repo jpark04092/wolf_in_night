@@ -19,9 +19,10 @@
 * **프로젝트명**: 한밤의 늑대인간 (One Night Ultimate Werewolf) 모바일 웹/PWA
 * **핵심 컨셉**:
   1. **Zero DB & Zero Custom Game Server**: Nginx WebDAV의 파일 I/O(MKCOL, PUT, GET, MOVE, PROPFIND)만으로 룸과 유저 상태를 격리 관리 (`File-as-a-State`).
-  2. **블러핑 강제 은폐**: 밤 동안 모든 유저가 '4x4 메모리 카드 뒤집기' 미니게임을 강제 플레이하여 시선과 손가락 움직임을 은폐.
+  2. **블러핑 강제 은폐**: 밤 동안 모든 유저가 '4x4 메모리 카드 뒤집기' 미니게임을 강제 플레이하여 시선과 손가락 움직임을 은폐하며, 미배정 직업은 3.5초 가상 턴 유지(테스트용 Fast Mode 지원).
   3. **3단계 MOVE 스왑 트랜잭션**: 강도와 말썽쟁이의 카드 교환 시 동시성 충돌을 방지하기 위해 `temp.json`을 경유하는 원자적 파일 교체.
-  4. **Zero Install & PWA**: 방장의 화면에 표시되는 초대용 QR 코드를 모바일 카메라로 스캔하여 즉시 Safari/Chrome으로 접속 (Screen Wake Lock 연동).
+  4. **스마트 타이머 & 분산 자가 치유(Self-Healing)**: 호스트 탭 스로틀링이나 미배정 직업 발생 시에도 멈춤 없이 안정적으로 턴이 전진하는 장애 복구 메커니즘 탑재.
+  5. **Zero Install & PWA**: 방장의 화면에 표시되는 초대용 QR 코드를 모바일 카메라로 스캔하여 즉시 Safari/Chrome으로 접속 (Screen Wake Lock 연동).
 
 ---
 

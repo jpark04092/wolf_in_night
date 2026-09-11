@@ -22,6 +22,7 @@ export interface RoomState {
   round?: number;
   timerStartedAt?: number;
   discussionDuration?: number; // seconds, default 300
+  fastMode?: boolean; // When true, unassigned night steps advance immediately (0.8s) for testing
 }
 
 export interface UserCardFile {

@@ -55,7 +55,8 @@
   "stepStartedAt": 1741678800000,
   "timerStartedAt": 1741678820000,
   "hostId": "user_a1b2c",
-  "killed": ["user_d3e4f"] | null
+  "killed": ["user_d3e4f"] | null,
+  "fastMode": false
 }
 ```
 

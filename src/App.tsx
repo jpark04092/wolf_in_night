@@ -9,6 +9,8 @@ import {
   Users,
   Eye,
   Sparkles,
+  Zap,
+  Clock,
 } from 'lucide-react';
 import {
   GamePhase,
@@ -67,9 +69,24 @@ export default function App() {
   const [votedTarget, setVotedTarget] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
   const [initialRoomFromUrl, setInitialRoomFromUrl] = useState<string>('');
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
   const { isLocked, isSupported: wakeLockSupported, requestLock } = useWakeLock();
-  const safeguardTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Stable refs for interval callbacks to avoid closures on stale state
+  const roomStateRef = useRef<RoomState>(roomState);
+  roomStateRef.current = roomState;
+  const playersRef = useRef<PlayerInfo[]>(players);
+  playersRef.current = players;
+  const botHandledStepRef = useRef<NightStep | null>(null);
+  const advancingStepRef = useRef<string | null>(null);
+
+  // High-frequency tick for smooth night progress bar rendering
+  useEffect(() => {
+    if (roomState.phase !== 'NIGHT') return;
+    const tick = setInterval(() => setCurrentTime(Date.now()), 100);
+    return () => clearInterval(tick);
+  }, [roomState.phase]);
 
   // Parse room query parameter on mount
   useEffect(() => {
@@ -226,117 +243,149 @@ export default function App() {
     };
   }, [roomId, myId]);
 
-  // Host Safeguard Timeout (12 seconds per night step)
+  // Helper to advance the night step atomically
+  const advanceNightStep = useCallback(
+    async (fromStep: NightStep) => {
+      if (!roomId) return;
+      const curState = roomStateRef.current;
+      if (curState.phase !== 'NIGHT' || curState.currentStep !== fromStep) {
+        return;
+      }
+      // Deduplicate rapid consecutive triggers for the exact same step cycle
+      const transitionKey = `${fromStep}_${curState.stepStartedAt}`;
+      if (advancingStepRef.current === transitionKey) return;
+      advancingStepRef.current = transitionKey;
+
+      console.log(`[Night Progression] Advancing from ${fromStep}...`);
+      const nextStep = getNextNightStep(fromStep);
+      if (nextStep) {
+        const updated: RoomState = {
+          ...curState,
+          currentStep: nextStep,
+          stepStartedAt: Date.now(),
+        };
+        await webdav.put(`/rooms/${roomId}/state.json`, updated);
+        setRoomState(updated);
+      } else {
+        // Last night role finished -> Auto transition to DAY_DISCUSSION
+        const updated: RoomState = {
+          ...curState,
+          phase: 'DAY_DISCUSSION',
+          currentStep: null,
+          timerStartedAt: Date.now(),
+        };
+        await webdav.put(`/rooms/${roomId}/state.json`, updated);
+        setRoomState(updated);
+      }
+    },
+    [roomId]
+  );
+
+  // Complete Night Action (Human Player finished)
+  const handleCompleteNightAction = async () => {
+    if (!roomState.currentStep) return;
+    await advanceNightStep(roomState.currentStep);
+  };
+
+  // Night Step Timer & Bot Orchestrator with Self-Healing Fallback
   useEffect(() => {
-    if (!isHost || roomState.phase !== 'NIGHT' || !roomState.currentStep) {
-      if (safeguardTimerRef.current) clearInterval(safeguardTimerRef.current);
+    if (!roomId || roomState.phase !== 'NIGHT' || !roomState.currentStep) {
       return;
     }
 
-    const checkStepTimeout = async () => {
-      const now = Date.now();
-      const elapsed = (now - roomState.stepStartedAt) / 1000;
+    const currentStep = roomState.currentStep;
+    const stepStartedAt = roomState.stepStartedAt;
 
-      // 12-second safeguard timeout as specified in Section 4.1
-      if (elapsed > 12) {
-        console.log(`[Host Safeguard] Step ${roomState.currentStep} timed out (12s). Advancing...`);
-        const nextStep = getNextNightStep(roomState.currentStep);
-        if (nextStep) {
-          await webdav.put(`/rooms/${roomId}/state.json`, {
-            ...roomState,
-            currentStep: nextStep,
-            stepStartedAt: Date.now(),
-          });
-        } else {
-          // Night completed -> Auto transition to DAY_DISCUSSION
-          await webdav.put(`/rooms/${roomId}/state.json`, {
-            ...roomState,
-            phase: 'DAY_DISCUSSION',
-            currentStep: null,
-            timerStartedAt: Date.now(),
-          });
+    const interval = setInterval(async () => {
+      const curState = roomStateRef.current;
+      if (curState.phase !== 'NIGHT' || curState.currentStep !== currentStep) {
+        return;
+      }
+
+      const curPlayers = playersRef.current;
+      const humanWithRole = curPlayers.find((p) => !p.isBot && p.initialRole === currentStep);
+      const botWithRole = curPlayers.find((p) => p.isBot && p.initialRole === currentStep);
+
+      // Determine step duration:
+      // - Human player exists: 12 seconds safeguard (can finish early via modal)
+      // - Bot player exists: 2 seconds
+      // - Unassigned role (in center): fastMode ? 0.8s : 3.5s (bluffing concealment)
+      let targetDuration = 3.5;
+      if (humanWithRole) {
+        targetDuration = 12;
+      } else if (botWithRole) {
+        targetDuration = 2;
+      } else if (curState.fastMode) {
+        targetDuration = 0.8;
+      }
+
+      const elapsed = (Date.now() - stepStartedAt) / 1000;
+
+      // 1. Bot action execution (Host executes once around 1.2s mark)
+      if (isHost && botWithRole && botHandledStepRef.current !== currentStep && elapsed >= 1.2) {
+        botHandledStepRef.current = currentStep;
+        if (currentStep === 'ROBBER') {
+          const target = curPlayers.find((p) => p.id !== botWithRole.id);
+          if (target) {
+            const myFile = `/rooms/${roomId}/${botWithRole.id}.json`;
+            const targetFile = `/rooms/${roomId}/${target.id}.json`;
+            const tempFile = `/rooms/${roomId}/temp.json`;
+            await webdav.move(myFile, tempFile);
+            await webdav.move(targetFile, myFile);
+            await webdav.move(tempFile, targetFile);
+          }
+        } else if (currentStep === 'TROUBLEMAKER') {
+          const others = curPlayers.filter((p) => p.id !== botWithRole.id);
+          if (others.length >= 2) {
+            const fileA = `/rooms/${roomId}/${others[0].id}.json`;
+            const fileB = `/rooms/${roomId}/${others[1].id}.json`;
+            const tempFile = `/rooms/${roomId}/temp.json`;
+            await webdav.move(fileA, tempFile);
+            await webdav.move(fileB, fileA);
+            await webdav.move(tempFile, fileB);
+          }
         }
       }
-    };
 
-    safeguardTimerRef.current = setInterval(checkStepTimeout, 1000);
+      // 2. Normal Host Step Progression
+      if (isHost && elapsed >= targetDuration) {
+        console.log(`[Host] Night step ${currentStep} duration reached (${targetDuration}s). Advancing...`);
+        advanceNightStep(currentStep);
+        return;
+      }
+
+      // 3. Fail-safe / Self-Healing for background tab throttled host:
+      // If host is inactive or throttled and elapsed >= targetDuration + 2.5s,
+      // the first active human player takes over advancing the step.
+      const firstActiveHuman = curPlayers.find((p) => !p.isBot);
+      if (!isHost && firstActiveHuman?.id === myId && elapsed >= targetDuration + 2.5) {
+        console.warn(`[Self-Healing Fail-Safe] Host throttled/offline. Advancing step ${currentStep}...`);
+        advanceNightStep(currentStep);
+      }
+    }, 400);
+
     return () => {
-      if (safeguardTimerRef.current) clearInterval(safeguardTimerRef.current);
+      clearInterval(interval);
     };
-  }, [isHost, roomId, roomState]);
+  }, [roomId, isHost, myId, roomState.phase, roomState.currentStep, roomState.stepStartedAt, advanceNightStep]);
 
-  // Host Bot Simulation for Night and Voting
+  // Host Bot Simulation for Voting
   useEffect(() => {
-    if (!isHost || !roomId) return;
+    if (!isHost || !roomId || roomState.phase !== 'VOTING') return;
 
-    // Bot night turn handling
-    if (roomState.phase === 'NIGHT' && roomState.currentStep) {
-      const step = roomState.currentStep;
-      // Check if a bot has this initial role
-      const botWithRole = players.find((p) => p.isBot && p.initialRole === step);
-      if (botWithRole) {
-        const timer = setTimeout(async () => {
-          // Bot automated action
-          if (step === 'ROBBER') {
-            // Bot robber swaps with another player
-            const target = players.find((p) => p.id !== botWithRole.id);
-            if (target) {
-              const myFile = `/rooms/${roomId}/${botWithRole.id}.json`;
-              const targetFile = `/rooms/${roomId}/${target.id}.json`;
-              const tempFile = `/rooms/${roomId}/temp.json`;
-              await webdav.move(myFile, tempFile);
-              await webdav.move(targetFile, myFile);
-              await webdav.move(tempFile, targetFile);
-            }
-          } else if (step === 'TROUBLEMAKER') {
-            const others = players.filter((p) => p.id !== botWithRole.id);
-            if (others.length >= 2) {
-              const fileA = `/rooms/${roomId}/${others[0].id}.json`;
-              const fileB = `/rooms/${roomId}/${others[1].id}.json`;
-              const tempFile = `/rooms/${roomId}/temp.json`;
-              await webdav.move(fileA, tempFile);
-              await webdav.move(fileB, fileA);
-              await webdav.move(tempFile, fileB);
-            }
-          }
-
-          // Advance step
-          const next = getNextNightStep(step);
-          if (next) {
-            await webdav.put(`/rooms/${roomId}/state.json`, {
-              ...roomState,
-              currentStep: next,
-              stepStartedAt: Date.now(),
-            });
-          } else {
-            await webdav.put(`/rooms/${roomId}/state.json`, {
-              ...roomState,
-              phase: 'DAY_DISCUSSION',
-              currentStep: null,
-              timerStartedAt: Date.now(),
-            });
-          }
-        }, 2000);
-        return () => clearTimeout(timer);
+    const bots = players.filter((p) => p.isBot);
+    bots.forEach((bot) => {
+      // Random target (other player)
+      const candidates = players.filter((p) => p.id !== bot.id);
+      if (candidates.length > 0) {
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        webdav.put(`/rooms/${roomId}/votes/${bot.id}.txt`, pick.id).catch(console.warn);
       }
-    }
-
-    // Bot auto-voting
-    if (roomState.phase === 'VOTING') {
-      const bots = players.filter((p) => p.isBot);
-      bots.forEach((bot) => {
-        // Random target (other player)
-        const candidates = players.filter((p) => p.id !== bot.id);
-        if (candidates.length > 0) {
-          const pick = candidates[Math.floor(Math.random() * candidates.length)];
-          webdav.put(`/rooms/${roomId}/votes/${bot.id}.txt`, pick.id).catch(console.warn);
-        }
-      });
-    }
-  }, [isHost, roomId, roomState, players]);
+    });
+  }, [isHost, roomId, roomState.phase, players]);
 
   // Host: Start Game (Shuffle deck & assign roles)
-  const handleStartGame = async (shuffledDeck: RoleType[]) => {
+  const handleStartGame = async (shuffledDeck: RoleType[], fastMode = false) => {
     if (!roomId || !isHost) return;
 
     try {
@@ -369,45 +418,20 @@ export default function App() {
         }
       }
 
-      // 4. PUT state.json (phase: "NIGHT", currentStep: "WEREWOLF", stepStartedAt: Date.now())
+      // 4. PUT state.json (phase: "NIGHT", currentStep: "WEREWOLF", stepStartedAt: Date.now(), fastMode)
       const nextState: RoomState = {
         phase: 'NIGHT',
         currentStep: 'WEREWOLF',
         stepStartedAt: Date.now(),
         hostId: myId,
         killed: null,
+        fastMode,
       };
       await webdav.put(`/rooms/${roomId}/state.json`, nextState);
       setRoomState(nextState);
       setVotedTarget(null);
     } catch (err) {
       console.error('Failed to start game:', err);
-    }
-  };
-
-  // Complete Night Action
-  const handleCompleteNightAction = async () => {
-    if (!roomId || !roomState.currentStep) return;
-
-    const nextStep = getNextNightStep(roomState.currentStep);
-    if (nextStep) {
-      const updated: RoomState = {
-        ...roomState,
-        currentStep: nextStep,
-        stepStartedAt: Date.now(),
-      };
-      await webdav.put(`/rooms/${roomId}/state.json`, updated);
-      setRoomState(updated);
-    } else {
-      // Last role (Insomniac) finished -> Auto switch to DAY_DISCUSSION
-      const updated: RoomState = {
-        ...roomState,
-        phase: 'DAY_DISCUSSION',
-        currentStep: null,
-        timerStartedAt: Date.now(),
-      };
-      await webdav.put(`/rooms/${roomId}/state.json`, updated);
-      setRoomState(updated);
     }
   };
 
@@ -629,24 +653,85 @@ export default function App() {
         )}
 
         {/* 2. NIGHT PHASE: Mandatory 4x4 Memory Minigame for Bluffing Concealment */}
-        {roomState.phase === 'NIGHT' && (
-          <div className="w-full flex-1 flex flex-col items-center justify-center relative">
-            <MemoryMinigame />
+        {roomState.phase === 'NIGHT' && (() => {
+          const currentNightRoleDef = roomState.currentStep ? ROLES[roomState.currentStep] : null;
+          const humanHasThisRole = players.some((p) => !p.isBot && p.initialRole === roomState.currentStep);
+          const botHasThisRole = players.some((p) => p.isBot && p.initialRole === roomState.currentStep);
+          const currentStepDuration = humanHasThisRole
+            ? 12
+            : botHasThisRole
+            ? 2
+            : roomState.fastMode
+            ? 0.8
+            : 3.5;
+          const remainingSec = Math.max(0, currentStepDuration - (currentTime - roomState.stepStartedAt) / 1000);
+          const progressPercent = Math.min(100, Math.max(0, (1 - remainingSec / currentStepDuration) * 100));
 
-            {/* If it's my turn, display the semi-transparent role action modal */}
-            {isMyNightTurn && roomState.currentStep && myInitialRole && (
-              <NightActionModal
-                roomId={roomId}
-                myId={myId}
-                currentStep={roomState.currentStep}
-                initialRole={myInitialRole}
-                players={players}
-                centerCards={centerCards}
-                onCompleteAction={handleCompleteNightAction}
-              />
-            )}
-          </div>
-        )}
+          return (
+            <div className="w-full flex-1 flex flex-col items-center relative">
+              {/* Night Step Live Status & Progress Bar */}
+              <div className="w-full bg-slate-900/90 border border-indigo-500/40 rounded-2xl p-3 mb-2.5 shadow-lg backdrop-blur-md">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      밤 행동 진행 중:
+                      <span className="text-indigo-400 font-extrabold underline decoration-indigo-500/50">
+                        {currentNightRoleDef?.name || '직업 확인'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
+                    {roomState.fastMode && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 flex items-center gap-0.5">
+                        <Zap className="w-3 h-3" /> 빠른 모드
+                      </span>
+                    )}
+                    <span>{remainingSec.toFixed(1)}s</span>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-2">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500 transition-all duration-100 ease-linear rounded-full"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+
+                <div className="text-[11px] text-slate-400 text-center">
+                  {isMyNightTurn ? (
+                    <span className="text-amber-300 font-bold animate-pulse">
+                      당신의 차례입니다! 아래 액션 창에서 능력을 사용하세요.
+                    </span>
+                  ) : (
+                    <span>
+                      모두 눈을 감고 있습니다... 미니게임을 하며 <strong>포커페이스</strong>를 유지하세요!
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Memory Minigame & Modal Container */}
+              <div className="w-full flex-1 flex flex-col items-center justify-center relative">
+                <MemoryMinigame />
+
+                {/* If it's my turn, display the semi-transparent role action modal */}
+                {isMyNightTurn && roomState.currentStep && myInitialRole && (
+                  <NightActionModal
+                    roomId={roomId}
+                    myId={myId}
+                    currentStep={roomState.currentStep}
+                    initialRole={myInitialRole}
+                    players={players}
+                    centerCards={centerCards}
+                    onCompleteAction={handleCompleteNightAction}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 3. DAY DISCUSSION VIEW */}
         {roomState.phase === 'DAY_DISCUSSION' && (
