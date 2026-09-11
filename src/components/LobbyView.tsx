@@ -30,46 +30,81 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Fetch rooms list via PROPFIND /webdav/rooms/
-  const fetchRooms = useCallback(async () => {
-    setIsLoading(true);
+  // Fetch rooms list via fast listRooms API or PROPFIND fallback
+  const fetchRooms = useCallback(async (isSilent = false) => {
+    if (!isSilent) setIsLoading(true);
     try {
       // Ensure /rooms directory exists
       await webdav.mkcol('/rooms');
-      const resources: WebDAVResource[] = await webdav.propfind('/rooms', '1');
+      const resources: WebDAVResource[] = await webdav.listRooms();
 
-      const roomList: RoomInfo[] = [];
-      for (const res of resources) {
-        // filter out /rooms/ itself
-        if (res.isDir && res.name && res.name !== 'rooms') {
-          const rId = res.name;
-          // Optionally fetch state.json for details
-          const state = await webdav.get<{ phase: string; hostId: string }>(`/rooms/${rId}/state.json`);
-          // Count user files
-          const roomFiles = await webdav.propfind(`/rooms/${rId}`, '1');
-          const userFilesCount = roomFiles.filter(
-            (f) => f.name.startsWith('user_') && f.name.endsWith('.json')
-          ).length;
+      const validRooms = resources.filter(
+        (res) => res.isDir && res.name && res.name !== 'rooms' && !res.name.startsWith('.')
+      );
 
-          roomList.push({
+      const roomPromises = validRooms.map(async (res): Promise<RoomInfo> => {
+        const rId = res.name;
+
+        // If listRooms already provided details
+        if (res.playerCount !== undefined && res.phase !== undefined) {
+          return {
             id: rId,
             name: rId.replace(/^room_/, '방 '),
-            playerCount: userFilesCount,
-            phase: (state?.phase as any) || 'WAITING',
-            hostId: state?.hostId || '',
-          });
+            playerCount: res.playerCount,
+            phase: (res.phase as any) || 'WAITING',
+            hostId: res.hostId || '',
+          };
         }
-      }
+
+        // Fallback: query state.json and room files individually
+        let phase = 'WAITING';
+        let hostId = '';
+        let playerCount = 0;
+
+        try {
+          const state = await webdav.get<{ phase: string; hostId: string }>(`/rooms/${encodeURIComponent(rId)}/state.json`);
+          if (state) {
+            phase = state.phase || 'WAITING';
+            hostId = state.hostId || '';
+          }
+        } catch {
+          // ignore
+        }
+
+        try {
+          const roomFiles = await webdav.propfind(`/rooms/${encodeURIComponent(rId)}`, '1');
+          playerCount = roomFiles.filter(
+            (f) => f.name.startsWith('user_') && f.name.endsWith('.json')
+          ).length;
+        } catch {
+          // ignore
+        }
+
+        return {
+          id: rId,
+          name: rId.replace(/^room_/, '방 '),
+          playerCount,
+          phase: phase as any,
+          hostId,
+        };
+      });
+
+      const roomList = await Promise.all(roomPromises);
       setRooms(roomList);
     } catch (err) {
       console.warn('[Lobby] Error fetching rooms:', err);
     } finally {
-      setIsLoading(false);
+      if (!isSilent) setIsLoading(false);
     }
   }, []);
 
+  // Initial load and periodic polling every 2 seconds
   useEffect(() => {
     fetchRooms();
+    const interval = setInterval(() => {
+      fetchRooms(true);
+    }, 2000);
+    return () => clearInterval(interval);
   }, [fetchRooms]);
 
   // If initialRoomId is provided in URL, auto-populate
@@ -149,49 +184,71 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
           </div>
         </section>
 
-        {/* Action Buttons: Create Room & Direct Join */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Action Button & Code Input */}
+        <div className="flex flex-col gap-3">
           <button
             id="create-room-open-btn"
             onClick={() => {
               playSound('click');
               setShowCreateModal(true);
             }}
-            className="flex flex-col items-center justify-center gap-1.5 p-4 rounded-3xl bg-gradient-to-b from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold shadow-lg shadow-indigo-950/50 transition active:scale-98 border border-indigo-400/30"
+            className="w-full flex items-center justify-center gap-2.5 p-4 rounded-3xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold shadow-lg shadow-indigo-950/50 transition active:scale-98 border border-indigo-400/30"
           >
-            <div className="w-9 h-9 rounded-2xl bg-white/10 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-2xl bg-white/10 flex items-center justify-center">
               <Plus className="w-5 h-5" />
             </div>
-            <span className="text-sm">방 만들기 (방장)</span>
+            <span className="text-sm">새로운 게임 방 만들기 (방장)</span>
           </button>
 
-          <button
-            onClick={() => {
-              if (roomIdInput.trim()) {
-                handleQuickJoin(roomIdInput.trim());
-              }
-            }}
-            disabled={!roomIdInput.trim()}
-            className="flex flex-col items-center justify-center gap-1.5 p-4 rounded-3xl bg-slate-900 border border-slate-700/80 hover:border-slate-600 text-slate-100 font-bold shadow-md transition active:scale-98 disabled:opacity-50"
-          >
-            <div className="w-9 h-9 rounded-2xl bg-slate-800 flex items-center justify-center text-amber-400">
-              <Smartphone className="w-5 h-5" />
+          {/* Direct Code Input */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-3 flex items-center gap-2">
+            <div className="w-8 h-8 rounded-2xl bg-slate-800 flex items-center justify-center text-amber-400 shrink-0">
+              <Smartphone className="w-4 h-4" />
             </div>
-            <span className="text-sm">코드로 바로 입장</span>
-          </button>
+            <input
+              type="text"
+              value={roomIdInput}
+              onChange={(e) => setRoomIdInput(e.target.value)}
+              placeholder="방 코드 입력 (예: room_101)"
+              className="flex-1 bg-slate-950 border border-slate-700/80 focus:border-indigo-500 rounded-2xl px-3 py-2 text-xs font-semibold text-white outline-none transition"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && roomIdInput.trim()) {
+                  handleQuickJoin(roomIdInput.trim());
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (roomIdInput.trim()) {
+                  handleQuickJoin(roomIdInput.trim());
+                }
+              }}
+              disabled={!roomIdInput.trim()}
+              className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs transition shrink-0 shadow-md"
+            >
+              입장
+            </button>
+          </div>
         </div>
 
         {/* Direct Code Input if user was invited or scanned QR */}
         {initialRoomId && (
-          <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-600/40 text-xs text-amber-300 flex items-center justify-between">
+          <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-950/60 to-indigo-950/60 border border-amber-500/50 text-amber-200 flex items-center justify-between shadow-lg">
             <div>
-              <span className="font-bold">QR / 초대 링크 감지:</span> {initialRoomId}
+              <div className="text-[11px] font-bold text-amber-400 flex items-center gap-1.5 mb-0.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                초대 링크 감지됨
+              </div>
+              <div className="text-xs text-slate-300">
+                방 코드: <span className="font-mono font-bold text-white">{initialRoomId}</span>
+              </div>
             </div>
             <button
               onClick={() => handleQuickJoin(initialRoomId)}
-              className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400"
+              className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-md flex items-center gap-1"
             >
-              입장하기
+              <span>입장하기</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         )}

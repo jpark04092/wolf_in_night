@@ -15,6 +15,9 @@ export interface WebDAVResource {
   name: string;
   isDir: boolean;
   size?: number;
+  playerCount?: number;
+  phase?: string;
+  hostId?: string;
 }
 
 // In-memory virtual WebDAV fallback cache to guarantee 100% resilience
@@ -45,13 +48,19 @@ export class WebDAVClient {
     headers: Record<string, string> = {}
   ): Promise<Response> {
     const url = `${this.baseUrl}${normalizePath(path)}`;
-    const reqHeaders: Record<string, string> = { ...headers };
+    const reqHeaders: Record<string, string> = {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      ...headers,
+    };
 
     try {
       const res = await fetch(url, {
         method,
         headers: reqHeaders,
         body: body ?? undefined,
+        cache: 'no-store',
+        credentials: 'same-origin',
       });
       return res;
     } catch (err) {
@@ -59,6 +68,38 @@ export class WebDAVClient {
       // Fallback to virtual FS emulator on fetch failure
       return this.handleVirtualFallback(method, path, body, reqHeaders);
     }
+  }
+
+  /**
+   * Fast rooms query with fallback to PROPFIND
+   */
+  async listRooms(): Promise<WebDAVResource[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/rooms`, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          return data.map((r: { id: string; playerCount?: number; phase?: string; hostId?: string }) => ({
+            href: `/webdav/rooms/${encodeURIComponent(r.id)}/`,
+            name: r.id,
+            isDir: true,
+            playerCount: r.playerCount,
+            phase: r.phase,
+            hostId: r.hostId,
+          }));
+        }
+      }
+    } catch (e) {
+      // ignore and fallback
+    }
+    return this.propfind('/rooms', '1');
   }
 
   // Virtual fallback for seamless standalone/offline demo
@@ -241,6 +282,11 @@ export class WebDAVClient {
         if (!name) {
           const parts = href.split('/').filter(Boolean);
           name = parts[parts.length - 1] || '';
+        }
+        try {
+          name = decodeURIComponent(name);
+        } catch {
+          // ignore
         }
 
         const resTypeElem = resp.getElementsByTagNameNS('*', 'resourcetype')[0];

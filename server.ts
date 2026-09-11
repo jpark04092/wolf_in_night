@@ -13,8 +13,15 @@ function resolveWebdavPath(urlPath: string): string {
   const cleanPath = urlPath.split('?')[0];
   // Strip /webdav/ prefix
   const relative = cleanPath.replace(/^\/webdav(\/|$)/, '');
+  // URL decode properly (e.g. handle Korean room names)
+  let decoded = relative;
+  try {
+    decoded = decodeURIComponent(relative);
+  } catch {
+    decoded = relative;
+  }
   // Sanitize path to prevent directory traversal
-  const safeRelative = path.normalize(relative).replace(/^(\.\.[\/\\])+/, '');
+  const safeRelative = path.normalize(decoded).replace(/^(\.\.[\/\\])+/, '');
   return path.join(STORAGE_DIR, safeRelative);
 }
 
@@ -33,13 +40,19 @@ async function startServer() {
   // Raw body parser for WebDAV PUT requests (supports JSON, text, xml)
   app.use('/webdav', express.raw({ type: '*/*', limit: '10mb' }));
 
-  // CORS Middleware for WebDAV
-  app.use('/webdav', (req, res, next) => {
+  // CORS & Cache-Control Middleware for WebDAV and API
+  app.use(['/webdav', '/api'], (req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, MKCOL, MOVE, PROPFIND, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Depth, Destination');
-    res.header('Access-Control-Expose-Headers', 'DAV, Location');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, MKCOL, MOVE, PROPFIND, OPTIONS, HEAD');
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Depth, Destination, Accept, Authorization, Cache-Control, Pragma, X-Requested-With, Overwrite, If, Lock-Token'
+    );
+    res.header('Access-Control-Expose-Headers', 'DAV, Location, Content-Type, Depth');
     res.header('DAV', '1, 2');
+    res.header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.header('Pragma', 'no-cache');
+    res.header('Expires', '0');
 
     if (req.method === 'OPTIONS') {
       res.status(204).end();
@@ -48,8 +61,63 @@ async function startServer() {
     next();
   });
 
+  // Fast JSON rooms listing API
+  app.get('/api/rooms', async (req, res) => {
+    try {
+      const roomsDir = path.join(STORAGE_DIR, 'rooms');
+      if (!existsSync(roomsDir)) {
+        await fs.mkdir(roomsDir, { recursive: true });
+      }
+      const files = await fs.readdir(roomsDir, { withFileTypes: true });
+      const roomsList = [];
+
+      for (const file of files) {
+        if (!file.isDirectory() || file.name.startsWith('.')) continue;
+        const roomId = file.name;
+        const roomDir = path.join(roomsDir, roomId);
+
+        let phase = 'WAITING';
+        let hostId = '';
+        const stateFile = path.join(roomDir, 'state.json');
+        if (existsSync(stateFile)) {
+          try {
+            const raw = await fs.readFile(stateFile, 'utf-8');
+            const state = JSON.parse(raw);
+            phase = state.phase || 'WAITING';
+            hostId = state.hostId || '';
+          } catch {
+            // ignore
+          }
+        }
+
+        let playerCount = 0;
+        try {
+          const roomFiles = await fs.readdir(roomDir);
+          playerCount = roomFiles.filter(
+            (f) => f.startsWith('user_') && f.endsWith('.json')
+          ).length;
+        } catch {
+          // ignore
+        }
+
+        roomsList.push({
+          id: roomId,
+          name: roomId.replace(/^room_/, '방 '),
+          playerCount,
+          phase,
+          hostId,
+        });
+      }
+
+      res.json(roomsList);
+    } catch (err) {
+      console.error('API /api/rooms error:', err);
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // WebDAV Handlers
-  app.all('/webdav/*', async (req, res) => {
+  app.all(['/webdav', '/webdav/*'], async (req, res) => {
     const targetPath = resolveWebdavPath(req.path);
     const method = req.method.toUpperCase();
 
@@ -157,6 +225,7 @@ async function startServer() {
         if (stat.isDirectory() && depth !== '0') {
           const files = await fs.readdir(targetPath, { withFileTypes: true });
           for (const file of files) {
+            if (file.name.startsWith('.')) continue;
             const filePath = path.join(targetPath, file.name);
             const fileStat = await fs.stat(filePath);
             const itemUrl = `${selfUrl}${file.name}${file.isDirectory() ? '/' : ''}`;

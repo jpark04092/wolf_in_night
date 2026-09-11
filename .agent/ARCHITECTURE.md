@@ -91,12 +91,20 @@
 
 | 메서드 | HTTP Verb | 목적 | 헤더/페이로드 |
 | :--- | :--- | :--- | :--- |
-| `propfind(path, depth)` | `PROPFIND` | 디렉터리 내 자식 파일/폴더 목록 검색 | `Depth: 0 또는 1`, XML 파싱 (D:response) |
-| `get<T>(path)` | `GET` | 파일 내용 읽기 (JSON 파싱 자동 처리) | `Cache-Control: no-cache` |
+| `listRooms()` | `GET` 또는 `PROPFIND` | 방 목록 및 접속자/페이즈 일괄 조회 (고속 동기화) | `Cache-Control: no-store` (`/api/rooms` 우선, PROPFIND 대체) |
+| `propfind(path, depth)` | `PROPFIND` | 디렉터리 내 자식 파일/폴더 목록 검색 | `Depth: 0 또는 1`, XML/JSON 파싱 (D:response) |
+| `get<T>(path)` | `GET` | 파일 내용 읽기 (JSON 파싱 자동 처리) | `Cache-Control: no-cache, no-store` |
 | `put(path, data)` | `PUT` | 신규 파일 생성 또는 덮어쓰기 | `Content-Type: application/json` 또는 `text/plain` |
 | `mkcol(path)` | `MKCOL` | 신규 폴더/컬렉션 생성 | (없음) |
 | `move(src, dest)` | `MOVE` | 원자적 파일명 변경 및 스왑 트랜잭션 | `Destination: {destPath}`, `Overwrite: T` |
 | `delete(path)` | `DELETE` | 파일 또는 컬렉션 삭제 | (없음) |
+
+> **네트워크 & 동기화 안정성 보장 조치**:
+> * **CORS 프리플라이트 완벽 지원**: `Accept`, `Depth`, `Destination`, `Cache-Control`, `Pragma`, `Authorization` 등 커스텀 WebDAV 헤더 사전 승인.
+> * **캐시 무효화**: 모든 WebDAV 및 API 응답에 `Cache-Control: no-cache, no-store, must-revalidate, max-age=0`을 명시하여 브라우저/프록시 304 또는 빈 상태 캐싱 차단.
+> * **로비 2초 자동 폴링**: 로비 진입 후 2초 간격으로 `listRooms()`를 호출하여 다른 기기에서 생성된 방을 새로고침 없이 실시간 갱신.
+> * **한글/특수문자 방 코드 디코딩**: URL 디코딩(`decodeURIComponent`) 처리로 다국어 방 이름 완벽 호환.
+> * **초대 링크 & 직접 코드 입력**: `?room={roomId}` 쿼리 파라미터 감지 시 1클릭 입장 배너 및 로비 내 직접 코드 입력창 제공.
 
 ---
 
