@@ -184,12 +184,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
           <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 to-rose-600 flex items-center justify-center shadow-lg shadow-indigo-900/30 shrink-0">
             <Moon className="w-5 h-5 text-amber-300 fill-amber-300" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-black tracking-tight text-base text-white">한밤의 늑대인간</h1>
-              <VersionBadge compact />
-            </div>
-            <span className="text-[10px] text-slate-400 font-mono tracking-wider">WebDAV PWA Edition</span>
+          <div className="flex items-center gap-2">
+            <h1 className="font-black tracking-tight text-base text-white">한밤의 늑대인간</h1>
+            <VersionBadge compact />
           </div>
         </div>
 
@@ -313,7 +310,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
           <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
             <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              진행 중인 WebDAV 방 목록 ({rooms.length})
+              방 목록 ({rooms.length})
             </h2>
             <button
               onClick={() => {
@@ -394,12 +391,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onJoinRoom, initialRoomId 
             )}
           </div>
         </section>
-
-        {/* Feature Highlights / Manual */}
-        <footer className="text-[11px] text-slate-500 space-y-1 text-center pb-2">
-          <p>🔒 WebDAV 파일 기반 상태 머신 (DB 없는 Zero Backend 구조)</p>
-          <p>🌙 밤 단계 4x4 메모리 게임으로 블러핑 완벽 은폐</p>
-        </footer>
       </main>
 
       {/* Create Room Modal */}
