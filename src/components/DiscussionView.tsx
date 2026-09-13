@@ -27,7 +27,6 @@ import { ROLES, generateDefaultDeck } from '../lib/roles';
 
 interface DiscussionViewProps {
   isHost: boolean;
-  myInitialRole: RoleType | null;
   players: PlayerInfo[];
   timerStartedAt: number;
   durationSeconds?: number;
@@ -38,7 +37,6 @@ interface DiscussionViewProps {
 
 export const DiscussionView: React.FC<DiscussionViewProps> = ({
   isHost,
-  myInitialRole,
   players,
   timerStartedAt,
   durationSeconds = 300,
@@ -146,25 +144,6 @@ export const DiscussionView: React.FC<DiscussionViewProps> = ({
         )}
       </div>
 
-      {/* My Initial Role Reminder */}
-      {myInitialRole && (
-        <div className="w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-lg flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-950/70 border border-indigo-500/30 flex items-center justify-center shadow-inner">
-              {renderRoleIcon(myInitialRole, 'w-5 h-5')}
-            </div>
-            <div>
-              <span className="text-[11px] text-slate-400 font-medium">당신의 밤 시작 직업:</span>
-              <div className="text-base font-black text-indigo-300">
-                {ROLES[myInitialRole]?.name}
-              </div>
-            </div>
-          </div>
-          <div className="text-right text-[11px] text-amber-400/90 max-w-[170px] leading-tight font-medium">
-            ⚠️ 강도·말썽쟁이 등에 의해 카드가 바뀌었을 수 있습니다!
-          </div>
-        </div>
-      )}
 
       {/* Participating Roles & Night Action Timeline Section */}
       <div className="w-full bg-slate-900/70 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-3">

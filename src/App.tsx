@@ -1670,7 +1670,6 @@ export default function App() {
         {roomState.phase === 'DAY_DISCUSSION' && (
           <DiscussionView
             isHost={isHost}
-            myInitialRole={myInitialRole}
             players={players}
             timerStartedAt={roomState.timerStartedAt || roomState.stepStartedAt}
             durationSeconds={300}
