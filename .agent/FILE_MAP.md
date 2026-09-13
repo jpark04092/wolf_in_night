@@ -30,11 +30,11 @@
 │   └── components/
 │       ├── LobbyView.tsx               # 방 목록(PROPFIND), 방 생성 모달, 닉네임 설정
 │       ├── VersionBadge.tsx            # 상단 배포 버전/커밋/빌드시각 뱃지 및 상세 확인 모달
-│       ├── WaitingRoomView.tsx         # 참여자 목록, QR 코드 모달, 가상 봇 추가(isAddingBot 락, 10인 상한)/제거, 게임 시작 (isStarting 로딩 지원)
+│       ├── WaitingRoomView.tsx         # 참여자 목록, QR 코드 모달, 고정 덱/역할 수량 뱃지(레이아웃 흔들림 방지), 가상 봇 추가/제거, 게임 시작
 │       ├── MemoryMinigame.tsx          # 4x4 메모리 카드 맞추기 (블러핑 은폐)
 │       ├── RoleRevealModal.tsx         # 게임 시작 직후 본인 비밀 시작 직업 전면 확인 모달
 │       ├── NightActionModal.tsx        # 밤 직업별 오버레이 액션 (동료 늑대인간 병렬/낙관적 즉시 조회, 안전한 role 프로퍼티 스왑)
-│       ├── DiscussionView.tsx          # 5분 아침 토론 타이머 및 팁
+│       ├── DiscussionView.tsx          # 5분 아침 토론 타이머, 참가 직업 덱 요약, 공식 밤 액션 순서(추론 타임라인), 핵심 추론 팁
 │       ├── VotingView.tsx              # 의심자 지목 투표 및 실시간 투표자 폴링
 │       ├── ResultView.tsx              # 처형자 발표, 시작/최종 직업 공개, 승패 판정, 폭죽 효과, 리매치 복귀
 │       ├── AdminModal.tsx              # 관리자 인증(0000), 비밀번호 변경, 방 개별/일괄 삭제 대시보드
@@ -89,6 +89,20 @@ export interface RoomState {
   round?: number; // 게임 회차 카운터 (모달 중복 방지)
   fastMode?: boolean;
   testMode?: boolean; // 테스트 모드 (타이머 정지)
+  deck?: RoleType[]; // 이번 라운드 참가 카드 덱 (플레이어 + 중앙 3장)
+}
+
+// 역할 명세 정의 (roles.ts)
+export interface RoleDef {
+  id: RoleType;
+  name: string;
+  team: 'VILLAGER' | 'WEREWOLF' | 'TANNER';
+  description: string;
+  nightInstruction: string;
+  nightOrder: number; // 0은 밤 행동 없음, 1~7 공식 순서
+  deductionTip?: string; // 아침 토론 추론 핵심 힌트
+  color: string;
+  iconName: string;
 }
 
 // 유저 카드 파일 ({userId}.json)

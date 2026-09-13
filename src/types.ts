@@ -24,6 +24,7 @@ export interface RoomState {
   discussionDuration?: number; // seconds, default 300
   fastMode?: boolean; // When true, unassigned night steps advance immediately (0.8s) for testing
   testMode?: boolean; // When true, all step timers are frozen for manual inspection/testing
+  deck?: RoleType[]; // Deck cards assigned for this game round (players + center cards)
 }
 
 export interface UserCardFile {
@@ -71,6 +72,7 @@ export interface RoleDef {
   description: string;
   nightInstruction: string;
   nightOrder: number; // 0 means no night action
+  deductionTip?: string; // Hint for daytime discussion deduction
   color: string;
   iconName: string;
 }

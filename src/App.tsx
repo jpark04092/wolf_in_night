@@ -26,7 +26,7 @@ import {
   CenterCardsFile,
   RoomInfo,
 } from './types';
-import { ROLES, NIGHT_STEPS, getNextNightStep } from './lib/roles';
+import { ROLES, NIGHT_STEPS, getNextNightStep, shuffleDeck } from './lib/roles';
 import { webdav, WebDAVResource } from './lib/webdav';
 import { useWakeLock } from './hooks/useWakeLock';
 import { LobbyView } from './components/LobbyView';
@@ -1071,12 +1071,13 @@ export default function App() {
   };
 
   // Host: Start Game (Shuffle deck & assign roles)
-  const handleStartGame = async (shuffledDeck: RoleType[], fastMode = false, testMode = false) => {
+  const handleStartGame = async (deckToUse: RoleType[], fastMode = false, testMode = false) => {
     if (!roomId || !isHost || isStartingGame) return;
     setIsStartingGame(true);
 
     try {
-      // 1. Assign player cards
+      // 1. Freshly shuffle the deck for random assignment to players & center
+      const shuffledDeck = shuffleDeck(deckToUse);
       const assignedCenter = shuffledDeck.slice(players.length);
       const updatedPlayers: PlayerInfo[] = players.map((p, i) => ({
         ...p,
@@ -1128,6 +1129,7 @@ export default function App() {
         round: nextRound,
         fastMode,
         testMode: isTestActive,
+        deck: shuffledDeck,
       };
       await webdav.put(`/rooms/${roomId}/state.json`, nextState);
       setRoomState(nextState);
@@ -1673,6 +1675,7 @@ export default function App() {
             timerStartedAt={roomState.timerStartedAt || roomState.stepStartedAt}
             durationSeconds={300}
             testMode={roomState.testMode}
+            currentDeck={roomState.deck}
             onStartVoting={handleStartVoting}
           />
         )}

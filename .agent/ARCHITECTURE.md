@@ -58,11 +58,13 @@
   "killed": ["user_d3e4f"] | null,
   "round": 1,
   "fastMode": false,
-  "testMode": false
+  "testMode": false,
+  "deck": ["WEREWOLF", "WEREWOLF", "SEER", "ROBBER", "TROUBLEMAKER", "INSOMNIAC"]
 }
 ```
 * **currentStep**: 밤 단계(`NIGHT`) 시작 직후에는 `null`로 초기화되어 5.0초간(Fast Mode 시 3.0초) 전원 시작 직업 카드(`RoleRevealModal`) 확인 단계를 거칩니다. 이후 `WEREWOLF` → `SEER` → `ROBBER` → `TROUBLEMAKER` → `INSOMNIAC` 순으로 전진하며, 아침 토론/투표/결과/대기실 단계에서는 `null`이 됩니다.
 * **round**: 게임 회차 카운터 (방 생성 시 0, 게임 시작 시 1씩 증가). 턴 스텝 이동 시 갱신되는 `stepStartedAt`과 게임 회차 구분을 독립시켜 턴 전환 시 시작 직업 모달 재팝업을 방지.
+* **deck**: 이번 판에 실제로 배정되어 투입된 카드 덱 전체 목록 (`RoleType[]`, 플레이어 인원수 + 중앙 3장). 아침 토론 단계(`DAY_DISCUSSION`)에서 참가된 직업 구성 및 밤 액션 순서/추론 타임라인을 모든 클라이언트에 정확히 제공하는 SSOT 역할을 합니다.
 
 ### (3) 유저 카드 상태: `{userId}.json`
 * **경로**: `/rooms/{roomId}/{userId}.json` (예: `user_x92a.json`)

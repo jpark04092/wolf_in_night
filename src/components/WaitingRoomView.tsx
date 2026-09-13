@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
 import {
   Users,
@@ -83,7 +83,18 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   };
 
   const totalCards = players.length + 3;
-  const previewDeck = generateDefaultDeck(players.length);
+  const previewDeck = useMemo(() => generateDefaultDeck(players.length), [players.length]);
+
+  const deckCounts = useMemo(() => {
+    return previewDeck.reduce((acc, r) => {
+      acc[r] = (acc[r] || 0) + 1;
+      return acc;
+    }, {} as Record<RoleType, number>);
+  }, [previewDeck]);
+
+  const uniquePreviewRoles = useMemo(() => {
+    return Object.keys(deckCounts) as RoleType[];
+  }, [deckCounts]);
 
   const canStart = players.length >= 3;
 
@@ -287,14 +298,20 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
           <span className="text-[11px] text-slate-500">플레이어 {players.length}장 + 중앙 3장</span>
         </div>
         <div className="flex flex-wrap gap-1.5 pt-1">
-          {previewDeck.map((role, idx) => (
-            <span
-              key={idx}
-              className="px-2 py-0.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-[11px] text-slate-300"
-            >
-              {ROLES[role]?.name}
-            </span>
-          ))}
+          {uniquePreviewRoles.map((role) => {
+            const count = deckCounts[role];
+            return (
+              <span
+                key={role}
+                className="px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700/70 text-[11px] text-slate-200 font-medium flex items-center gap-1.5 shadow-sm"
+              >
+                <span>{ROLES[role]?.name}</span>
+                <span className="text-[10px] font-bold text-amber-400 bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-500/20">
+                  {count}장
+                </span>
+              </span>
+            );
+          })}
         </div>
       </div>
 
