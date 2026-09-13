@@ -97,6 +97,9 @@ export default function App() {
   const [initialRoomFromUrl, setInitialRoomFromUrl] = useState<string>('');
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
   const [toastMessage, setToastMessage] = useState<{ id: number; text: string; type?: 'info' | 'success' | 'warn' } | null>(null);
+  const [myMinigameScore, setMyMinigameScore] = useState<number>(0);
+  const myMinigameScoreRef = useRef<number>(0);
+  const scoreSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     return typeof window !== 'undefined' && sessionStorage.getItem('onw_is_admin') === 'true';
@@ -130,6 +133,53 @@ export default function App() {
       setToastMessage(null);
     }, 3500);
   }, []);
+
+  // Function to persist minigame score to WebDAV user file
+  const persistMinigameScore = useCallback(
+    async (scoreToSave: number) => {
+      if (!roomId) return;
+      try {
+        const uFile = await webdav.get<UserCardFile>(`/rooms/${roomId}/${myId}.json`);
+        if (uFile) {
+          await webdav.put(`/rooms/${roomId}/${myId}.json`, {
+            ...uFile,
+            minigameScore: scoreToSave,
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to persist minigame score:', e);
+      }
+    },
+    [roomId, myId]
+  );
+
+  // Debounced score update handler from MemoryMinigame
+  const handleMinigameScoreChange = useCallback(
+    (newScore: number) => {
+      myMinigameScoreRef.current = newScore;
+      setMyMinigameScore(newScore);
+
+      if (scoreSaveTimerRef.current) {
+        clearTimeout(scoreSaveTimerRef.current);
+      }
+      scoreSaveTimerRef.current = setTimeout(() => {
+        persistMinigameScore(newScore);
+      }, 600);
+    },
+    [persistMinigameScore]
+  );
+
+  // Flush score when exiting NIGHT phase
+  const prevPhaseForScoreRef = useRef<GamePhase>(roomState.phase);
+  useEffect(() => {
+    if (prevPhaseForScoreRef.current === 'NIGHT' && roomState.phase !== 'NIGHT') {
+      if (scoreSaveTimerRef.current) {
+        clearTimeout(scoreSaveTimerRef.current);
+      }
+      persistMinigameScore(myMinigameScoreRef.current);
+    }
+    prevPhaseForScoreRef.current = roomState.phase;
+  }, [roomState.phase, persistMinigameScore]);
 
   // Admin Test Mode Toggle (Timer freeze for manual inspection)
   const handleToggleTestMode = useCallback(async () => {
@@ -683,6 +733,7 @@ export default function App() {
             ...currentFile,
             lastSeen: Date.now(),
             sessionId: tabSessionId,
+            minigameScore: myMinigameScoreRef.current || currentFile.minigameScore || 0,
           });
         }
       } catch {
@@ -776,6 +827,8 @@ export default function App() {
             const timeoutThreshold = (state?.testMode || roomStateRef.current.testMode) ? 180000 : 12000;
             const isOnline = uData.isBot || (uData.lastSeen ? now - uData.lastSeen < timeoutThreshold : true);
 
+            const effectiveScore = uId === myId ? Math.max(myMinigameScoreRef.current, uData.minigameScore ?? 0) : (uData.minigameScore ?? 0);
+
             loadedPlayers.push({
               id: uId,
               displayName: uData.displayName,
@@ -786,6 +839,7 @@ export default function App() {
               lastSeen: uData.lastSeen,
               sessionId: uData.sessionId,
               isOnline,
+              minigameScore: effectiveScore,
             });
 
             if (uId === myId) {
@@ -1077,12 +1131,15 @@ export default function App() {
 
     try {
       // 1. Freshly shuffle the deck for random assignment to players & center
+      setMyMinigameScore(0);
+      myMinigameScoreRef.current = 0;
       const shuffledDeck = shuffleDeck(deckToUse);
       const assignedCenter = shuffledDeck.slice(players.length);
       const updatedPlayers: PlayerInfo[] = players.map((p, i) => ({
         ...p,
         role: shuffledDeck[i],
         initialRole: shuffledDeck[i],
+        minigameScore: 0,
       }));
 
       for (let i = 0; i < players.length; i++) {
@@ -1095,6 +1152,7 @@ export default function App() {
           isBot: p.isBot,
           lastSeen: p.lastSeen,
           sessionId: p.sessionId,
+          minigameScore: 0,
         };
         await webdav.put(`/rooms/${roomId}/${p.id}.json`, uFile);
         if (p.id === myId) {
@@ -1213,6 +1271,9 @@ export default function App() {
   const handleRestartGame = async () => {
     if (!roomId || !isHost) return;
     try {
+      setMyMinigameScore(0);
+      myMinigameScoreRef.current = 0;
+
       // 1. Reset state.json to WAITING
       const nextState: RoomState = {
         phase: 'WAITING',
@@ -1237,6 +1298,7 @@ export default function App() {
           isBot: p.isBot,
           lastSeen: p.lastSeen,
           sessionId: p.sessionId,
+          minigameScore: 0,
         };
         await webdav.put(`/rooms/${roomId}/${p.id}.json`, uFile).catch(() => {});
       }
@@ -1247,6 +1309,7 @@ export default function App() {
           ...p,
           role: 'VILLAGER',
           initialRole: undefined,
+          minigameScore: 0,
         }))
       );
 
@@ -1639,7 +1702,10 @@ export default function App() {
 
               {/* Memory Minigame & Modal Container */}
               <div className="w-full flex-1 flex flex-col items-center justify-center relative">
-                <MemoryMinigame />
+                <MemoryMinigame
+                  initialScore={myMinigameScore}
+                  onScoreChange={handleMinigameScoreChange}
+                />
 
                 {/* 1. Game Start Secret Role Reveal Modal */}
                 {roomState.phase === 'NIGHT' && myInitialRole && !hasConfirmedInitialRole && (

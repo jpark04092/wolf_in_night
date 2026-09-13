@@ -35,6 +35,7 @@ export interface UserCardFile {
   avatarId?: number;
   lastSeen?: number; // Unix timestamp for presence / heartbeat
   sessionId?: string; // Tab/Client unique session token
+  minigameScore?: number; // Night memory minigame score
 }
 
 export interface CenterCardsFile {
@@ -54,6 +55,7 @@ export interface PlayerInfo {
   lastSeen?: number;
   isOnline?: boolean;
   sessionId?: string;
+  minigameScore?: number; // Night memory minigame score
 }
 
 export interface RoomInfo {

@@ -114,6 +114,7 @@ export interface UserCardFile {
   avatarId?: number;
   lastSeen?: number; // 4초 주기 하트비트 타임스탬프
   sessionId?: string; // 탭/클라이언트 세션 토큰 (중복 세션 감지)
+  minigameScore?: number; // 밤 미니게임 획득 점수
 }
 
 // 참여 플레이어 런타임 정보
@@ -130,6 +131,7 @@ export interface PlayerInfo {
   lastSeen?: number;
   isOnline?: boolean;
   sessionId?: string;
+  minigameScore?: number; // 밤 미니게임 획득 점수
 }
 
 // 중앙 카드 파일 (center.json)

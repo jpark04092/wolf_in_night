@@ -8,6 +8,9 @@ import {
   Layers,
   CheckCircle2,
   Users,
+  Crown,
+  Gift,
+  Gamepad2,
 } from 'lucide-react';
 import { PlayerInfo, RoleType } from '../types';
 import { ROLES } from '../lib/roles';
@@ -32,6 +35,16 @@ export const ResultView: React.FC<ResultViewProps> = ({
   onRestartGame,
 }) => {
   const [isRestarting, setIsRestarting] = useState(false);
+
+  // Minigame MVP & Reward Target Calculation
+  // Prioritize human players for rewards; fallback to all players if only bots
+  const humanPlayers = players.filter((p) => !p.isBot);
+  const rewardEligiblePlayers = humanPlayers.length > 0 ? humanPlayers : players;
+  const maxMinigameScore = Math.max(0, ...rewardEligiblePlayers.map((p) => p.minigameScore || 0));
+  const topMinigameScorers = rewardEligiblePlayers.filter(
+    (p) => (p.minigameScore || 0) === maxMinigameScore && maxMinigameScore > 0
+  );
+  const isMeTopScorer = topMinigameScorers.some((p) => p.id === myId);
 
   // Determine who won:
   // Werewolves in the game (final roles of players):
@@ -173,6 +186,72 @@ export const ResultView: React.FC<ResultViewProps> = ({
         )}
       </div>
 
+      {/* Minigame MVP & Reward Target Announcement */}
+      <div className="w-full bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-950 border border-amber-500/50 rounded-3xl p-4 shadow-xl relative overflow-hidden">
+        <div className="flex items-center justify-between mb-2.5">
+          <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Crown className="w-4 h-4 text-amber-400" />
+            밤 미니게임 최고 득점자
+          </h3>
+          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 flex items-center gap-1 shadow-sm">
+            <Gift className="w-3 h-3 text-amber-400" />
+            리워드 지급 대상
+          </span>
+        </div>
+
+        {maxMinigameScore > 0 && topMinigameScorers.length > 0 ? (
+          <div className="space-y-2">
+            {topMinigameScorers.map((scorer) => (
+              <div
+                key={scorer.id}
+                className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between shadow-inner"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 flex items-center justify-center font-bold shadow-md">
+                    <Trophy className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-sm text-white">
+                        {scorer.displayName}
+                      </span>
+                      {scorer.id === myId && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-200 font-bold">
+                          나
+                        </span>
+                      )}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                        {topMinigameScorers.length > 1 ? '공동 1위' : '단독 1위'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-amber-200/80 font-medium mt-0.5">
+                      손동작 은폐 최고 기록 달성
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-sm font-black text-amber-300 font-mono px-3 py-1 rounded-xl bg-amber-950/80 border border-amber-500/50 block shadow">
+                    {scorer.minigameScore?.toLocaleString()}점
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {isMeTopScorer && (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-center text-xs text-amber-300 font-bold flex items-center justify-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                <span>축하합니다! 이번 게임 미니게임 1등으로 리워드 대상입니다! 🎉</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-center text-xs text-slate-400">
+            밤 동안 미니게임 득점자가 없습니다 (0점).
+          </div>
+        )}
+      </div>
+
       {/* All Players Final Cards Reveal */}
       <div className="w-full bg-slate-900/60 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-3">
         <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -223,9 +302,19 @@ export const ResultView: React.FC<ResultViewProps> = ({
                   <span className="text-xs font-black text-amber-300 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-700 block">
                     {finalRoleDef?.name}
                   </span>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {voteCounts[p.id] || 0}표
-                  </span>
+                  <div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-slate-400 font-mono">
+                    <span className="flex items-center gap-0.5 text-amber-400 font-medium">
+                      <Gamepad2 className="w-3 h-3" />
+                      {(p.minigameScore || 0).toLocaleString()}점
+                      {maxMinigameScore > 0 && (p.minigameScore || 0) === maxMinigameScore && (
+                        <span className="ml-1 text-[9px] px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-bold">
+                          MVP
+                        </span>
+                      )}
+                    </span>
+                    <span>•</span>
+                    <span>{voteCounts[p.id] || 0}표</span>
+                  </div>
                 </div>
               </div>
             );

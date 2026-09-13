@@ -61,10 +61,18 @@ function generateDeck(): MinigameCard[] {
   return cards;
 }
 
-export const MemoryMinigame: React.FC = () => {
+interface MemoryMinigameProps {
+  initialScore?: number;
+  onScoreChange?: (score: number, clears: number) => void;
+}
+
+export const MemoryMinigame: React.FC<MemoryMinigameProps> = ({
+  initialScore = 0,
+  onScoreChange,
+}) => {
   const [cards, setCards] = useState<MinigameCard[]>([]);
   const [flippedIndices, setFlippedIndices] = useState<number[]>([]);
-  const [score, setScore] = useState(0);
+  const [score, setScore] = useState(initialScore);
   const [combos, setCombos] = useState(0);
   const [clears, setClears] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -115,7 +123,11 @@ export const MemoryMinigame: React.FC = () => {
             }
             return updated;
           });
-          setScore((s) => s + 100 + combos * 20);
+          setScore((s) => {
+            const nextScore = s + 100 + combos * 20;
+            onScoreChange?.(nextScore, clears);
+            return nextScore;
+          });
           setCombos((c) => c + 1);
           setFlippedIndices([]);
           setIsProcessing(false);

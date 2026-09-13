@@ -76,10 +76,12 @@
   "displayName": "홍길동",
   "isBot": false,
   "lastSeen": 1741678805000,
-  "sessionId": "sess_x92a1"
+  "sessionId": "sess_x92a1",
+  "minigameScore": 340
 }
 ```
-* **주의**: 강도(Robber)나 말썽쟁이(Troublemaker)에 의해 카드가 맞바뀌더라도 유저 파일명을 MOVE하지 않고, 오직 `role` 필드만 상호 교체하여 갱신(`PUT`)합니다. `initialRole` 및 `displayName`, `lastSeen`, `sessionId`는 영구 보존되어 신원 파괴를 원천 차단합니다.
+* **주의**: 강도(Robber)나 말썽쟁이(Troublemaker)에 의해 카드가 맞바뀌더라도 유저 파일명을 MOVE하지 않고, 오직 `role` 필드만 상호 교체하여 갱신(`PUT`)합니다. `initialRole` 및 `displayName`, `lastSeen`, `sessionId`, `minigameScore`는 영구 보존되어 신원 파괴를 원천 차단합니다.
+* **minigameScore**: 밤 단계(`NIGHT`) 동안 손동작 은폐 미니게임에서 획득한 누적 점수. 게임 시작 및 대기실 복귀 시 0으로 초기화되며, 최종 결과(`RESULT`) 화면에서 미니게임 MVP(리워드 지급 대상) 산출에 사용됩니다.
 * **lastSeen**: 브라우저 탭 활성 상태를 알리는 하트비트 타임스탬프(4초 주기 갱신). 대기실에서 12초 초과 미갱신 시 오프라인으로 판정됩니다.
 * **sessionId**: 브라우저 탭/클라이언트의 고유 세션 토큰으로 동일 ID에 대한 다중 탭/다중 기기 중복 접속 및 충돌을 감지하고 방지합니다.
 
