@@ -904,19 +904,19 @@ export default function App() {
 
   // Helper to advance the night step atomically
   const advanceNightStep = useCallback(
-    async (fromStep: NightStep) => {
+    async (fromStep: NightStep | null) => {
       if (!roomId) return;
       const curState = roomStateRef.current;
       if (curState.phase !== 'NIGHT' || curState.currentStep !== fromStep) {
         return;
       }
       // Deduplicate rapid consecutive triggers for the exact same step cycle
-      const transitionKey = `${fromStep}_${curState.stepStartedAt}`;
+      const transitionKey = `${fromStep ?? 'REVEAL'}_${curState.stepStartedAt}`;
       if (advancingStepRef.current === transitionKey) return;
       advancingStepRef.current = transitionKey;
 
-      console.log(`[Night Progression] Advancing from ${fromStep}...`);
-      const nextStep = getNextNightStep(fromStep);
+      console.log(`[Night Progression] Advancing from ${fromStep ?? 'REVEAL'}...`);
+      const nextStep: NightStep | null = fromStep === null ? 'WEREWOLF' : getNextNightStep(fromStep);
       if (nextStep) {
         const updated: RoomState = {
           ...curState,
@@ -948,7 +948,7 @@ export default function App() {
 
   // Night Step Timer & Bot Orchestrator with Self-Healing Fallback
   useEffect(() => {
-    if (!roomId || roomState.phase !== 'NIGHT' || !roomState.currentStep) {
+    if (!roomId || roomState.phase !== 'NIGHT') {
       return;
     }
 
@@ -962,16 +962,20 @@ export default function App() {
       }
 
       const curPlayers = playersRef.current;
-      const humanWithRole = curPlayers.find((p) => !p.isBot && p.initialRole === currentStep);
-      const botWithRole = curPlayers.find((p) => p.isBot && p.initialRole === currentStep);
+      const isRoleRevealStep = currentStep === null;
+      const humanWithRole = !isRoleRevealStep && curPlayers.find((p) => !p.isBot && p.initialRole === currentStep);
+      const botWithRole = !isRoleRevealStep && curPlayers.find((p) => p.isBot && p.initialRole === currentStep);
 
       // Determine step duration:
-      // - Human player exists: 12 seconds safeguard (can finish early via modal)
+      // - Initial role reveal step: 5.0 seconds (or 3.0s in fastMode) for all players to view card
+      // - Human player exists: 14 seconds safeguard (can finish early via modal)
       // - Bot player exists: 2 seconds
       // - Unassigned role (in center): fastMode ? 0.8s : 3.5s (bluffing concealment)
       let targetDuration = 3.5;
-      if (humanWithRole) {
-        targetDuration = 12;
+      if (isRoleRevealStep) {
+        targetDuration = curState.fastMode ? 3.0 : 5.0;
+      } else if (humanWithRole) {
+        targetDuration = 14;
       } else if (botWithRole) {
         targetDuration = 2;
       } else if (curState.fastMode) {
@@ -981,7 +985,7 @@ export default function App() {
       const elapsed = (Date.now() - stepStartedAt) / 1000;
 
       // 1. Bot action execution (Host executes once around 1.2s mark)
-      if (isHost && botWithRole && botHandledStepRef.current !== currentStep && elapsed >= 1.2) {
+      if (isHost && !isRoleRevealStep && botWithRole && botHandledStepRef.current !== currentStep && elapsed >= 1.2) {
         botHandledStepRef.current = currentStep;
         if (currentStep === 'ROBBER') {
           const target = curPlayers.find((p) => p.id !== botWithRole.id);
@@ -1017,17 +1021,17 @@ export default function App() {
 
       // 3. Normal Host Step Progression
       if (isHost && elapsed >= targetDuration) {
-        console.log(`[Host] Night step ${currentStep} duration reached (${targetDuration}s). Advancing...`);
+        console.log(`[Host] Night step ${currentStep ?? 'REVEAL'} duration reached (${targetDuration}s). Advancing...`);
         advanceNightStep(currentStep);
         return;
       }
 
-      // 3. Fail-safe / Self-Healing for background tab throttled host:
+      // 4. Fail-safe / Self-Healing for background tab throttled host:
       // If host is inactive or throttled and elapsed >= targetDuration + 2.5s,
       // the first active human player takes over advancing the step.
       const firstActiveHuman = curPlayers.find((p) => !p.isBot);
       if (!isHost && firstActiveHuman?.id === myId && elapsed >= targetDuration + 2.5) {
-        console.warn(`[Self-Healing Fail-Safe] Host throttled/offline. Advancing step ${currentStep}...`);
+        console.warn(`[Self-Healing Fail-Safe] Host throttled/offline. Advancing step ${currentStep ?? 'REVEAL'}...`);
         advanceNightStep(currentStep);
       }
     }, 400);
@@ -1073,6 +1077,12 @@ export default function App() {
     try {
       // 1. Assign player cards
       const assignedCenter = shuffledDeck.slice(players.length);
+      const updatedPlayers: PlayerInfo[] = players.map((p, i) => ({
+        ...p,
+        role: shuffledDeck[i],
+        initialRole: shuffledDeck[i],
+      }));
+
       for (let i = 0; i < players.length; i++) {
         const p = players[i];
         const assignedRole = shuffledDeck[i];
@@ -1090,6 +1100,7 @@ export default function App() {
           setMyInitialRole(assignedRole);
         }
       }
+      setPlayers(updatedPlayers);
 
       // 2. Write center.json
       const centerData: CenterCardsFile = {
@@ -1101,7 +1112,7 @@ export default function App() {
       // 3. Clear votes directory cleanly
       await clearVotesDirectory(roomId);
 
-      // 4. PUT state.json (phase: "NIGHT", currentStep: "WEREWOLF", stepStartedAt: Date.now(), fastMode, testMode, round)
+      // 4. PUT state.json (phase: "NIGHT", currentStep: null (Card Reveal), stepStartedAt: Date.now(), fastMode, testMode, round)
       const isTestActive = testMode || roomStateRef.current.testMode || false;
       const nightStartedAt = Date.now();
       const nextRound = (roomStateRef.current.round || 0) + 1;
@@ -1109,7 +1120,7 @@ export default function App() {
 
       const nextState: RoomState = {
         phase: 'NIGHT',
-        currentStep: 'WEREWOLF',
+        currentStep: null,
         stepStartedAt: nightStartedAt,
         hostId: myId,
         killed: null,
@@ -1446,10 +1457,13 @@ export default function App() {
 
         {/* 2. NIGHT PHASE: Mandatory 4x4 Memory Minigame for Bluffing Concealment */}
         {roomState.phase === 'NIGHT' && (() => {
-          const humanHasThisRole = players.some((p) => !p.isBot && p.initialRole === roomState.currentStep);
-          const botHasThisRole = players.some((p) => p.isBot && p.initialRole === roomState.currentStep);
-          const currentStepDuration = humanHasThisRole
-            ? 12
+          const isRoleRevealStep = roomState.currentStep === null;
+          const humanHasThisRole = !isRoleRevealStep && players.some((p) => !p.isBot && p.initialRole === roomState.currentStep);
+          const botHasThisRole = !isRoleRevealStep && players.some((p) => p.isBot && p.initialRole === roomState.currentStep);
+          const currentStepDuration = isRoleRevealStep
+            ? (roomState.fastMode ? 3.0 : 5.0)
+            : humanHasThisRole
+            ? 14
             : botHasThisRole
             ? 2
             : roomState.fastMode
@@ -1467,7 +1481,11 @@ export default function App() {
                     <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
                     <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                       <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>고요한 정적 속에서 밤이 흐르고 있습니다...</span>
+                      <span>
+                        {isRoleRevealStep
+                          ? '비밀 직업 카드를 확인하고 있습니다...'
+                          : '고요한 정적 속에서 밤이 흐르고 있습니다...'}
+                      </span>
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
@@ -1502,7 +1520,11 @@ export default function App() {
                 </div>
 
                 <div className="text-[11px] text-slate-400 text-center">
-                  {isMyNightTurn ? (
+                  {isRoleRevealStep ? (
+                    <span>
+                      모두 자신의 직업 카드를 확인하고 있습니다. 곧 밤이 깊어집니다.
+                    </span>
+                  ) : isMyNightTurn ? (
                     <span className="text-amber-300 font-bold animate-pulse">
                       당신의 차례입니다! 능력을 사용하세요.
                     </span>
@@ -1514,7 +1536,7 @@ export default function App() {
                 </div>
 
                 {/* Test Mode Manual Step Advancement Control */}
-                {roomState.testMode && roomState.currentStep && (
+                {roomState.testMode && (
                   <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between">
                     <span className="text-[10px] text-purple-300 flex items-center gap-1">
                       <FlaskConical className="w-3 h-3 text-purple-400" />
@@ -1522,11 +1544,11 @@ export default function App() {
                     </span>
                     <button
                       onClick={() => {
-                        advanceNightStep(roomState.currentStep!);
+                        advanceNightStep(roomState.currentStep);
                       }}
                       className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5"
                     >
-                      <span>다음 밤 단계 진행</span>
+                      <span>{roomState.currentStep ? '다음 밤 단계 진행' : '밤 행동 시작 (늑대인간)'}</span>
                       <span>⏩</span>
                     </button>
                   </div>

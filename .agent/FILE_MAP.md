@@ -16,7 +16,7 @@
 │       └── deploy.yml                  # GitHub Push 및 Codespaces 자동 빌드/배포 워크플로우
 ├── src/
 │   ├── main.tsx                        # React DOM 엔트리포인트 (PWA 서비스 워커 등록)
-│   ├── App.tsx                         # 최상위 상태 관리자, WebDAV 폴링(800ms), 방장 자동 위임, 페이즈 라우팅 및 리매치 라이프사이클
+│   ├── App.tsx                         # 최상위 상태 관리자, 밤 단계 시작 직업 확인(currentStep: null, 5초) 오케스트레이션, 방장 로컬 players 즉시 갱신, 차등 타이머(인간 14초), 방장 자동 위임, 페이즈 라우팅 및 리매치 라이프사이클
 │   ├── types.ts                        # 공통 타입 및 인터페이스 (RoleType, RoomState 등)
 │   ├── version.ts                      # 빌드타임 버전, 빌드일시, Git Commit Hash 정의
 │   ├── index.css                       # Tailwind CSS (@import "tailwindcss";)
@@ -33,7 +33,7 @@
 │       ├── WaitingRoomView.tsx         # 참여자 목록, QR 코드 모달, 가상 봇 추가/제거, 게임 시작 (isStarting 로딩 지원)
 │       ├── MemoryMinigame.tsx          # 4x4 메모리 카드 맞추기 (블러핑 은폐)
 │       ├── RoleRevealModal.tsx         # 게임 시작 직후 본인 비밀 시작 직업 전면 확인 모달
-│       ├── NightActionModal.tsx        # 밤 직업별 오버레이 액션 (안전한 role 프로퍼티 스왑)
+│       ├── NightActionModal.tsx        # 밤 직업별 오버레이 액션 (동료 늑대인간 병렬/낙관적 즉시 조회, 안전한 role 프로퍼티 스왑)
 │       ├── DiscussionView.tsx          # 5분 아침 토론 타이머 및 팁
 │       ├── VotingView.tsx              # 의심자 지목 투표 및 실시간 투표자 폴링
 │       ├── ResultView.tsx              # 처형자 발표, 시작/최종 직업 공개, 승패 판정, 폭죽 효과, 리매치 복귀

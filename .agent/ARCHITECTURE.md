@@ -61,6 +61,7 @@
   "testMode": false
 }
 ```
+* **currentStep**: 밤 단계(`NIGHT`) 시작 직후에는 `null`로 초기화되어 5.0초간(Fast Mode 시 3.0초) 전원 시작 직업 카드(`RoleRevealModal`) 확인 단계를 거칩니다. 이후 `WEREWOLF` → `SEER` → `ROBBER` → `TROUBLEMAKER` → `INSOMNIAC` 순으로 전진하며, 아침 토론/투표/결과/대기실 단계에서는 `null`이 됩니다.
 * **round**: 게임 회차 카운터 (방 생성 시 0, 게임 시작 시 1씩 증가). 턴 스텝 이동 시 갱신되는 `stepStartedAt`과 게임 회차 구분을 독립시켜 턴 전환 시 시작 직업 모달 재팝업을 방지.
 
 ### (3) 유저 카드 상태: `{userId}.json`

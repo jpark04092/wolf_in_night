@@ -60,19 +60,31 @@ export const NightActionModal: React.FC<NightActionModalProps> = ({
 
     async function loadRoleContext() {
       if (currentStep === 'WEREWOLF' && initialRole === 'WEREWOLF') {
-        setIsLoading(true);
-        // Find other werewolves
+        // Optimistic pre-population from current players prop for instant rendering
+        const initialTeammates = otherPlayers.filter(
+          (p) => p.initialRole === 'WEREWOLF' || p.role === 'WEREWOLF'
+        );
+        setWerewolfTeammates(initialTeammates);
+        setIsLoneWolf(initialTeammates.length === 0);
+
+        // Verify with WebDAV in parallel to guarantee freshness
         const wolfTeammates: PlayerInfo[] = [];
-        for (const p of otherPlayers) {
-          try {
-            const userFile = await webdav.get<UserCardFile>(`/rooms/${roomId}/${p.id}.json`);
-            if (userFile && (userFile.initialRole === 'WEREWOLF' || userFile.role === 'WEREWOLF')) {
-              wolfTeammates.push(p);
+        await Promise.all(
+          otherPlayers.map(async (p) => {
+            try {
+              const userFile = await webdav.get<UserCardFile>(`/rooms/${roomId}/${p.id}.json`);
+              if (userFile && (userFile.initialRole === 'WEREWOLF' || userFile.role === 'WEREWOLF')) {
+                wolfTeammates.push(p);
+              }
+            } catch (e) {
+              console.warn(e);
+              if (p.initialRole === 'WEREWOLF' || p.role === 'WEREWOLF') {
+                wolfTeammates.push(p);
+              }
             }
-          } catch (e) {
-            console.warn(e);
-          }
-        }
+          })
+        );
+
         if (isMounted) {
           setWerewolfTeammates(wolfTeammates);
           setIsLoneWolf(wolfTeammates.length === 0);
