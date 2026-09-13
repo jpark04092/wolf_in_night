@@ -174,6 +174,7 @@ export default function App() {
   const prevHostIdRef = useRef<string>('');
   const lastHandledRoundRef = useRef<number>(0);
   const [isStartingGame, setIsStartingGame] = useState(false);
+  const [isAddingBot, setIsAddingBot] = useState(false);
 
   // In-memory unique ID for this React tab instance (not shared or cloned)
   const tabInstanceIdRef = useRef<string>(`tab_${Math.random().toString(36).substring(2, 9)}`);
@@ -1238,6 +1239,15 @@ export default function App() {
         await webdav.put(`/rooms/${roomId}/${p.id}.json`, uFile).catch(() => {});
       }
 
+      // Optimistically reset player roles locally so that waiting room doesn't display stale roles
+      setPlayers((prev) =>
+        prev.map((p) => ({
+          ...p,
+          role: 'VILLAGER',
+          initialRole: undefined,
+        }))
+      );
+
       // 4. Reset Host local in-game states
       setRoomState(nextState);
       setVotedTarget(null);
@@ -1254,26 +1264,95 @@ export default function App() {
     }
   };
 
-  // Add simulated bot player (for easy solo/testing)
+  // Add simulated bot player (with robust deduplication & debounce lock)
   const handleAddBot = async () => {
-    if (!roomId) return;
-    const botNum = players.filter((p) => p.isBot).length + 1;
-    const botNames = ['민수', '영희', '지우', '현우', '다은', '준호'];
-    const botName = `봇_${botNames[(botNum - 1) % botNames.length]}`;
-    const botId = `user_bot_${Math.random().toString(36).substring(2, 6)}`;
+    if (!roomId || isAddingBot) return;
+    setIsAddingBot(true);
 
-    const botFile: UserCardFile = {
-      role: 'VILLAGER',
-      displayName: botName,
-      isBot: true,
-    };
-    await webdav.put(`/rooms/${roomId}/${botId}.json`, botFile);
+    try {
+      // 1. Gather all currently existing display names in the room
+      const existingNames = new Set(playersRef.current.map((p) => p.displayName.trim()));
+
+      // Direct WebDAV check to prevent stale state on F5 reload or slow polling
+      try {
+        const resources: WebDAVResource[] = await webdav.propfind(`/rooms/${roomId}/`, '1');
+        const userFiles = resources.filter(
+          (r) => !r.isDir && r.name.startsWith('user_') && r.name.endsWith('.json')
+        );
+        for (const uf of userFiles) {
+          const uData = await webdav.get<UserCardFile>(`/rooms/${roomId}/${uf.name}`);
+          if (uData?.displayName) {
+            existingNames.add(uData.displayName.trim());
+          }
+        }
+      } catch {
+        // Fallback to in-memory playersRef if propfind fails
+      }
+
+      // 2. Preset bot names pool (expanded to 12 diverse names)
+      const botNames = ['민수', '영희', '지우', '현우', '다은', '준호', '서연', '도윤', '하은', '예준', '유진', '시우'];
+
+      // 3. Find first unused name
+      let chosenName = '';
+      for (const name of botNames) {
+        const candidate = `봇_${name}`;
+        if (!existingNames.has(candidate)) {
+          chosenName = candidate;
+          break;
+        }
+      }
+
+      // 4. Fallback if all 12 preset names are taken: use unique numbered suffix (봇_1, 봇_2, ...)
+      if (!chosenName) {
+        let counter = 1;
+        while (!chosenName) {
+          const candidate = `봇_${counter}`;
+          if (!existingNames.has(candidate)) {
+            chosenName = candidate;
+          }
+          counter++;
+        }
+      }
+
+      const botId = `user_bot_${Math.random().toString(36).substring(2, 6)}`;
+      const botFile: UserCardFile = {
+        role: 'VILLAGER',
+        displayName: chosenName,
+        isBot: true,
+      };
+
+      // Optimistic update so immediate consecutive renders/clicks see the new bot instantly
+      setPlayers((prev) => [
+        ...prev,
+        {
+          id: botId,
+          displayName: chosenName,
+          isHost: false,
+          isBot: true,
+          role: 'VILLAGER',
+          isOnline: true,
+        },
+      ]);
+
+      await webdav.put(`/rooms/${roomId}/${botId}.json`, botFile);
+    } catch (err) {
+      console.error('Failed to add bot:', err);
+      showToast('봇 추가에 실패했습니다.', 'warn');
+    } finally {
+      setIsAddingBot(false);
+    }
   };
 
-  // Remove simulated bot
+  // Remove simulated bot (with optimistic update)
   const handleRemoveBot = async (botId: string) => {
     if (!roomId) return;
-    await webdav.delete(`/rooms/${roomId}/${botId}.json`);
+    setPlayers((prev) => prev.filter((p) => p.id !== botId));
+    try {
+      await webdav.delete(`/rooms/${roomId}/${botId}.json`);
+    } catch (err) {
+      console.error('Failed to remove bot:', err);
+      showToast('봇 제거에 실패했습니다.', 'warn');
+    }
   };
 
   // Is it my turn to perform a night action?
@@ -1445,6 +1524,7 @@ export default function App() {
             isAdmin={isAdmin}
             testMode={roomState.testMode}
             isStarting={isStartingGame}
+            isAddingBot={isAddingBot}
             players={players}
             onStartGame={handleStartGame}
             onAddBot={handleAddBot}

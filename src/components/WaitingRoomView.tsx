@@ -27,6 +27,7 @@ interface WaitingRoomViewProps {
   isAdmin?: boolean;
   testMode?: boolean;
   isStarting?: boolean;
+  isAddingBot?: boolean;
   players: PlayerInfo[];
   onStartGame: (deck: RoleType[], fastMode?: boolean, testMode?: boolean) => void;
   onAddBot: () => void;
@@ -43,6 +44,7 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
   isAdmin = false,
   testMode = false,
   isStarting = false,
+  isAddingBot = false,
   players,
   onStartGame,
   onAddBot,
@@ -162,11 +164,18 @@ export const WaitingRoomView: React.FC<WaitingRoomViewProps> = ({
                 onClick={() => {
                   onAddBot();
                 }}
-                className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold border border-indigo-500/30 flex items-center gap-1 transition"
-                title="가상 테스트 봇 추가"
+                disabled={isAddingBot || players.length >= 10}
+                className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-300 text-xs font-semibold border border-indigo-500/30 flex items-center gap-1 transition"
+                title={
+                  players.length >= 10
+                    ? '최대 인원(10명)에 도달했습니다.'
+                    : isAddingBot
+                    ? '봇 추가 중...'
+                    : '가상 테스트 봇 추가'
+                }
               >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>봇 추가</span>
+                <UserPlus className={`w-3.5 h-3.5 ${isAddingBot ? 'animate-pulse text-indigo-400' : ''}`} />
+                <span>{isAddingBot ? '추가 중...' : '봇 추가'}</span>
               </button>
             </div>
           )}
